@@ -6,8 +6,8 @@
 !chmod +x cloudflared
 
 # Cell B - get the app code
-!git clone https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO.git
-%cd YOUR_REPO
+!git clone https://github.com/rickeysharma942-stack/english-math-tutor.git
+%cd english-math-tutor
 
 # Cell C - set the base model id (not stored in the repo), start the app and the public tunnel
 import os, subprocess, time

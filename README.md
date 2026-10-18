@@ -19,7 +19,7 @@ A GPU-powered Streamlit app that runs an **8B-parameter, 4-bit quantized languag
 | Low VRAM | 4-bit NF4 + double quantization, fp16 compute |
 | Clean chat formatting | Uses the model's native chat template with thinking disabled for short, direct answers |
 | Cached loading | `st.cache_resource` loads the model once per server session |
-| Adapters on the Hub | Weights live on Hugging Face; this repo holds only code |
+| Adapters on GitHub Releases | Adapter weights are release assets, downloaded automatically on first launch |
 
 ---
 
@@ -79,17 +79,16 @@ flowchart LR
 └── README.md
 ```
 
-Adapter weights are stored separately on the Hugging Face Hub:
+Adapter weights are stored as **GitHub Release assets**, not in the repo itself. Attach these four files to a release, for example tagged `v1.0`:
 
 ```
-your-username/qwen-style-lora-adapters
-├── english_adapter/
-│   ├── adapter_config.json
-│   └── adapter_model.safetensors
-└── math_adapter/
-    ├── adapter_config.json
-    └── adapter_model.safetensors
+english_adapter_config.json
+english_adapter_model.safetensors
+math_adapter_config.json
+math_adapter_model.safetensors
 ```
+
+On first launch, `app.py` downloads them into an `adapters/` folder.
 
 ---
 
@@ -103,16 +102,17 @@ cd YOUR_REPO
 pip install -r requirements.txt
 ```
 
-1. Open `app.py` and set `ADAPTER_REPO` to your Hugging Face repo.
-2. Run:
+1. In `app.py`, set `GITHUB_REPO` (`username/repo`) and `RELEASE_TAG` to match your release. The repo must be public.
+2. Set `BASE_MODEL` (the base model id) as an environment variable or Streamlit secret, then run:
 
 ```bash
+export BASE_MODEL="<base-model-id>"
 streamlit run app.py
 ```
 
 ### Run on Colab / Kaggle (free GPU)
 
-Open a GPU notebook, clone this repo, and run the cells in `run_in_colab.py`. It starts Streamlit and prints a public `trycloudflare.com` link that works while the notebook session is alive.
+Open a GPU notebook, clone this repo, and run the cells in `run_in_colab.py`. It asks for the model id and adapter repo at runtime, starts Streamlit and prints a public `trycloudflare.com` link that works while the notebook session is alive.
 
 ---
 
@@ -131,7 +131,7 @@ Open a GPU notebook, clone this repo, and run the cells in `run_in_colab.py`. It
 
 - **Streamlit Community Cloud** is CPU-only with limited RAM, so it **cannot** run this model directly.
 - Options: run on a GPU notebook with a tunnel (demos), host on a GPU server, or serve the model behind an API and use Streamlit only as the front end.
-- Never commit model weights or tokens to GitHub; use Hugging Face for weights and environment secrets for tokens.
+- Keep adapter weights in GitHub Releases rather than committing them to the repo, and keep tokens in environment secrets.
 
 ---
 
@@ -156,7 +156,7 @@ Open a GPU notebook, clone this repo, and run the cells in `run_in_colab.py`. It
 
 ## ❓ FAQ
 
-**Can I use my own adapters?** Yes. Put them in `english_adapter/` and `math_adapter/` folders in any Hub repo and update `ADAPTER_REPO`.
+**Can I use my own adapters?** Yes. Attach your adapter config and weight files to a GitHub Release and update `GITHUB_REPO`, `RELEASE_TAG` and `ASSETS` in `app.py`.
 
 **Why SymPy?** Language models make arithmetic and algebra mistakes. SymPy computes the exact answer and the model explains it.
 

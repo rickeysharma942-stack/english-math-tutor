@@ -16,12 +16,12 @@ RELEASE_TAG = "v1.0"                             # the release tag that holds th
 # File names exactly as you uploaded them to the GitHub Release
 ASSETS = {
     "english_adapter": {
-        "adapter_config.json": "adapter_config_english.json",
-        "adapter_model.safetensors": "adapter_model_english.safetensors",
+        "adapter_config.json": "english_adapter_config.json",
+        "adapter_model.safetensors": "english_adapter_model.safetensors",
     },
     "math_adapter": {
-        "adapter_config.json": "adapter_config_math.json",
-        "adapter_model.safetensors": "adapter_model.safetensors",
+        "adapter_config.json": "math_adapter_config.json",
+        "adapter_model.safetensors": "math_adapter_model.safetensors",
     },
 }
 # --------------------------------------------
@@ -44,7 +44,7 @@ def get_base_model_id():
     return value
 
 
-BASE_MODEL = "Qwen/Qwen3-8B"
+BASE_MODEL = get_base_model_id()
 if not BASE_MODEL:
     st.error("BASE_MODEL is not set. Set it as an environment variable or a Streamlit secret.")
     st.stop()
