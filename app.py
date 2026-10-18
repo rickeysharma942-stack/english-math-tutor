@@ -10,18 +10,18 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
 # ---------------- EDIT THESE ----------------
-GITHUB_REPO = "YOUR_GITHUB_USERNAME/YOUR_REPO"   # repo that has the release
+GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
 RELEASE_TAG = "v1.0"                             # the release tag that holds the adapter files
 
 # File names exactly as you uploaded them to the GitHub Release
 ASSETS = {
     "english_adapter": {
-        "adapter_config.json": "english_adapter_config.json",
-        "adapter_model.safetensors": "english_adapter_model.safetensors",
+        "adapter_config.json": "adapter_config_english.json",
+        "adapter_model.safetensors": "adapter_model_english.safetensors",
     },
     "math_adapter": {
-        "adapter_config.json": "math_adapter_config.json",
-        "adapter_model.safetensors": "math_adapter_model.safetensors",
+        "adapter_config.json": "adapter_config_math.json",
+        "adapter_model.safetensors": "adapter_model.safetensors",
     },
 }
 # --------------------------------------------
