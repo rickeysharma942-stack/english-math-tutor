@@ -11,7 +11,7 @@ from peft import PeftModel
 
 # ---------------- EDIT THESE ----------------
 GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
-RELEASE_TAG = "v1.0"                             # the release tag that holds the adapter files
+RELEASE_TAG = "model-v1"                           # the release tag that holds the adapter files
 
 # File names exactly as you uploaded them to the GitHub Release
 ASSETS = {
