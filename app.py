@@ -44,7 +44,7 @@ def get_base_model_id():
     return value
 
 
-BASE_MODEL = get_base_model_id()
+BASE_MODEL = "Qwen/Qwen3-8B"
 if not BASE_MODEL:
     st.error("BASE_MODEL is not set. Set it as an environment variable or a Streamlit secret.")
     st.stop()
