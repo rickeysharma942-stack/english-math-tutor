@@ -137,13 +137,9 @@ st.markdown(
       .brand { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
       .brand img, .brand .emoji { width:54px; height:54px; border-radius:16px; object-fit:cover; }
       .brand .emoji { display:flex; align-items:center; justify-content:center; font-size:30px;
-                      background:linear-gradient(135deg,#6366f1,#22d3ee); color:white; }
+                     background:linear-gradient(135deg,#6366f1,#22d3ee); color:white; }
       .brand .title { font-size:1.55rem; font-weight:800; line-height:1.1; }
       .brand .subtitle { color:#64748b; font-size:.88rem; }
-      .mode-card { border:1px solid rgba(148,163,184,.25); border-radius:18px; padding:16px;
-                   background:rgba(148,163,184,.07); height:100%; }
-      .mode-title { font-weight:750; font-size:1.05rem; margin-bottom:4px; }
-      .mode-blurb { color:#94a3b8; font-size:.86rem; }
       .file-chip { display:inline-block; background:rgba(99,102,241,.15); color:#a5b4fc;
                    border:1px solid rgba(99,102,241,.35); padding:3px 10px; border-radius:999px;
                    font-size:.76rem; margin:3px 4px 3px 0; }
@@ -293,7 +289,6 @@ def extract_text_from_zip_bytes(data: bytes, original_name: str) -> str:
                 if lower.endswith((".xml", ".txt", ".html", ".htm", ".xhtml", ".md", ".json", ".csv")):
                     useful.append(name)
 
-            # Prioritize common document content files.
             priority = [
                 "word/document.xml",
                 "xl/sharedstrings.xml",
@@ -658,8 +653,7 @@ def safe_markdown(text: str) -> str:
     if text.count("```") % 2:
         text += "\n```"
 
-    if text.count("$$") % 2:
-        text += "$$"
+    if text.count("$$") \% 2: text += "$$"
 
     return text
 
@@ -796,21 +790,20 @@ with st.sidebar:
 
 # ----------------------------- MAIN UI -----------------------------
 
-cols = st.columns(3)
+mode_cols = st.columns(3)
 
 for i, (name, cfg) in enumerate(MODES.items()):
-    with cols[i]:
-        selected = name == mode
-        border = "2px solid #6366f1" if selected else "1px solid rgba(148,163,184,.25)"
-        st.markdown(
-            f"""
-            <div class="mode-card" style="border:{border}">
-              <div class="mode-title">{cfg['icon']} {name}</div>
-              <div class="mode-blurb">{cfg['blurb']}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    with mode_cols[i]:
+        is_selected = (name == mode)
+        if st.button(
+            f"{cfg['icon']}  {name}\n\n{cfg['blurb']}",
+            key=f"mode_card_{name}",
+            use_container_width=True,
+            type="primary" if is_selected else "secondary"
+        ):
+            if st.session_state.mode != name:
+                st.session_state.mode = name
+                st.rerun()
 
 st.divider()
 
