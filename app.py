@@ -146,7 +146,7 @@ st.markdown(
       .chat-user { background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(34,211,238,.12));
                    border:1px solid rgba(99,102,241,.28); border-radius:16px; padding:14px 16px; }
       .chat-bot { background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.20);
-                  border-radius:16px; padding:14px 16px; }
+                border-radius:16px; padding:14px 16px; }
       .small-muted { color:#94a3b8; font-size:.82rem; }
       div[data-testid="stFileUploaderDropzone"] { border-radius:16px; }
     </style>
@@ -747,7 +747,6 @@ ss.setdefault("expr", "diff(x**3 + 5*x, x)")
 with st.sidebar:
     st.subheader("Workspace")
 
-    # Use on_change callback to safely update mode when radio button changes
     def handle_mode_change():
         st.session_state.mode = st.session_state.sidebar_mode
 
@@ -761,7 +760,6 @@ with st.sidebar:
         key="sidebar_mode",
         on_change=handle_mode_change,
     )
-    # Ensure sync
     st.session_state.mode = st.session_state.sidebar_mode
 
     st.caption(MODES[mode]["blurb"])
