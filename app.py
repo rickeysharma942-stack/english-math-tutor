@@ -17,22 +17,23 @@ from peft import PeftModel
 
 # ---------------- EDIT THESE ----------------
 GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
-RELEASE_TAG = "chatbot"
+RELEASE_TAG = "chatbot"                                    # the TAG of the release (not its title)
 
+# File names exactly as they appear in the GitHub Release
 ASSETS = {
     "english_adapter": {"adapter_config.json": "adapter_config_english.json",
                         "adapter_model.safetensors": "adapter_model_english.safetensors"},
     "math_adapter":    {"adapter_config.json": "adapter_config_math.json",
                         "adapter_model.safetensors": "adapter_model.safetensors"},
-    # Stopgap: no general adapter exists yet, so General mode borrows the English files
+    # Stopgap: no general adapter exists yet, so General mode borrows the English files.
+    # When you publish the new release, use these names instead:
+    #   general_adapter_config.json / general_adapter_model.safetensors
     "general_adapter": {"adapter_config.json": "adapter_config_english.json",
                         "adapter_model.safetensors": "adapter_model_english.safetensors"},
 }
-    for name, short in [("english_adapter", "english"), ("math_adapter", "math"), ("general_adapter", "general")]
-}
 # --------------------------------------------
 
-ADAPTER_DIR = Path("adapters")
+ADAPTER_DIR = Path("adapters") / RELEASE_TAG   # one folder per release tag, so old files are never reused
 # Chats are saved here. Point CHAT_DIR at a Google Drive folder to keep them after the Colab session ends.
 CHAT_DIR = Path(os.environ.get("CHAT_DIR", "chats"))
 CHAT_DIR.mkdir(parents=True, exist_ok=True)
