@@ -21,7 +21,6 @@ GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the r
 RELEASE_TAG = "chatbot"                                    # the TAG of the release (not its title "model-v2")
 
 # File names exactly as they appear in the GitHub Release:
-#   english_adapter_config.json, english_adapter_model.safetensors, and the same two for math and general
 ASSETS = {
     name: {
         "adapter_config.json": f"{short}_adapter_config.json",
@@ -32,7 +31,6 @@ ASSETS = {
 # --------------------------------------------
 
 ADAPTER_DIR = Path("adapters") / RELEASE_TAG   # one folder per release tag, so old files are never reused
-# Chats are saved here. Point CHAT_DIR at a Google Drive folder to keep them after the Colab session ends.
 CHAT_DIR = Path(os.environ.get("CHAT_DIR", "chats"))
 CHAT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -69,7 +67,7 @@ if LOGO_PATH.exists():
     _b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
     LOGO_IMG = f'<img class="logo" src="data:image/png;base64,{_b64}" alt="">'
     AVATAR = PAGE_ICON = str(LOGO_PATH)
-else:                                                   # fallback if the file is missing
+else:                                                   
     LOGO_IMG, AVATAR, PAGE_ICON = "✨", "✨", "✨"
 
 st.set_page_config(page_title="English + Math Tutor", page_icon=PAGE_ICON, layout="centered")
@@ -92,7 +90,6 @@ div.stButton > button {border-radius: 12px;}
 section[data-testid="stSidebar"] div.stButton > button {justify-content: flex-start; text-align: left; padding: .35rem .7rem;}
 section[data-testid="stSidebar"] div.stButton > button p {white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
 .hist-label {font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; opacity: .8; margin: .8rem 0 .2rem .2rem;}
-/* accessibility: strong visible keyboard focus, screen-reader-only text, reduced motion */
 button:focus-visible, textarea:focus-visible, input:focus-visible, [role="radio"]:focus-visible, [role="tab"]:focus-visible
   {outline: 3px solid #0891b2 !important; outline-offset: 2px !important;}
 .sr-only {position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;}
@@ -107,7 +104,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, [role="radio"
 
 # ---------------- model loading ----------------
 def get_base_model_id():
-    """Base model id comes from an environment variable or a Streamlit secret (not hard-coded)."""
     value = os.environ.get("BASE_MODEL")
     if not value:
         try:
@@ -123,7 +119,7 @@ if not BASE_MODEL:
     st.stop()
 
 if not torch.cuda.is_available():
-    st.error("No GPU found. This model needs an NVIDIA GPU (for example a Colab or Kaggle T4).")
+    st.error("No GPU found. This model needs an NVIDIA GPU.")
     st.stop()
 
 
@@ -139,7 +135,6 @@ def download_file(url: str, dest: Path):
 
 
 def ensure_adapters():
-    """Download adapter files from the GitHub Release if they are not already on disk."""
     base_url = f"https://github.com/{GITHUB_REPO}/releases/download/{RELEASE_TAG}"
     for adapter_name, files in ASSETS.items():
         for local_name, asset_name in files.items():
@@ -163,14 +158,13 @@ def load_model():
     mdl.load_adapter(str(ADAPTER_DIR / "math_adapter"), adapter_name="math_adapter")
     mdl.load_adapter(str(ADAPTER_DIR / "general_adapter"), adapter_name="general_adapter")
     mdl.eval()
-    return tok, mdl, threading.Lock(), threading.Event()   # lock: one generation at a time; event: the Stop button
+    return tok, mdl, threading.Lock(), threading.Event()
 
 
 try:
     tokenizer, model, gen_lock, stop_event = load_model()
 except requests.HTTPError as e:
-    st.error(f"Could not download adapter files from the GitHub Release: {e}. "
-             "Check GITHUB_REPO, RELEASE_TAG and the asset names, and make sure the repo is public.")
+    st.error(f"Could not download adapter files: {e}.")
     st.stop()
 
 
@@ -186,9 +180,8 @@ _ALLOWED = re.compile(r"[A-Za-z0-9_+\-*/^().,\s]*")
 
 
 def run_sympy(expr: str):
-    """Return (result, error). Only a small whitelist of SymPy names is available to the expression."""
     if len(expr) > 200 or "__" in expr or not _ALLOWED.fullmatch(expr):
-        return None, "Use only numbers, letters, + - * / ^ ( ) , and SymPy functions like diff(...)."
+        return None, "Use only numbers, letters, + - * / ^ ( ) , and SymPy functions."
     try:
         return sp.simplify(parse_expr(expr, local_dict=SAFE, global_dict={"__builtins__": {}},
                                       transformations=_TRANSFORMS)), None
@@ -196,13 +189,12 @@ def run_sympy(expr: str):
         return None, f"{type(e).__name__}: {str(e)[:120]}"
 
 
-# ---------------- generation (streamed, stoppable) ----------------
+# ---------------- generation ----------------
 class _Stopped(Exception):
     pass
 
 
 class StoppableStreamer(TextIteratorStreamer):
-    """Normal token streamer that aborts generation as soon as the Stop button sets the event."""
     def __init__(self, tok, ev, **kw):
         super().__init__(tok, **kw)
         self._ev = ev
@@ -233,7 +225,7 @@ def stream_reply(messages, adapter, temperature, max_new_tokens, err, raw_prompt
                     )
             except _Stopped:
                 streamer.on_finalized_text("", stream_end=True)
-            except Exception as e:                       # make sure the UI never hangs
+            except Exception as e:
                 err["e"] = e
                 streamer.on_finalized_text("", stream_end=True)
 
@@ -244,11 +236,9 @@ def stream_reply(messages, adapter, temperature, max_new_tokens, err, raw_prompt
 
 # ---------------- text helpers ----------------
 def safe_markdown(t: str) -> str:
-    """Close unfinished code fences / math blocks so half-streamed markdown never breaks the layout."""
     if t.count("```") % 2:
         t += "\n```"
-    if t.count("$$") % 2:
-        t += "$$"
+    if t.count("$$") \% 2: t += "$$"
     return t
 
 
@@ -256,7 +246,7 @@ def render_stream(slot, text: str, final: bool = False):
     if final:
         slot.markdown(text)
         return
-    held = text[: max(text.rfind(" "), text.rfind("\n")) + 1] or text    # hold back the unfinished last word
+    held = text[: max(text.rfind(" "), text.rfind("\n")) + 1] or text
     slot.markdown(safe_markdown(held) + " ▌")
 
 
@@ -268,12 +258,10 @@ def normalize_math(s: str) -> str:
 
 
 def popover(label):
-    """st.popover needs Streamlit >= 1.32; fall back to an expander on older versions."""
     return st.popover(label) if hasattr(st, "popover") else st.expander(label)
 
 
 def columns(spec, **kw):
-    """Vertically centred columns (Streamlit >= 1.36); plain columns on older versions."""
     try:
         return st.columns(spec, vertical_alignment="center", **kw)
     except TypeError:
@@ -301,15 +289,16 @@ FOLLOWUPS = {
 FILE_DEFAULTS = {"English": "Proofread this text and explain each correction in detail:",
                  "Math": "Solve the problems in this text step by step:",
                  "General": "Summarize and explain this text:"}
-MAX_FILE_CHARS = 6000
+
+# INCREASED FILE CHARACTER LIMIT (e.g. 25,000 characters)
+MAX_FILE_CHARS = 25000 
 
 
 def train_prompt(user: str) -> str:
-    """Exactly the prompt format the adapters were trained on (used to continue a cut-off answer)."""
     return f"<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 
 
-# ---------------- chat history (saved as JSON files) ----------------
+# ---------------- chat history ----------------
 def make_title(text: str) -> str:
     t = re.sub(r"\s+", " ", text).strip()
     t = re.sub(r"^Correct the grammar and explain in detail:\s*", "Grammar: ", t)
@@ -340,7 +329,7 @@ def list_chats():
             d = json.loads(p.read_text(encoding="utf-8"))
             chats.append({"id": d["id"], "title": d.get("title", "Chat"), "updated": d.get("updated", 0),
                           "starred": d.get("starred", False),
-                          "blob": " ".join(m["content"] for m in d["messages"]).lower(),     # full-text search
+                          "blob": " ".join(m["content"] for m in d["messages"]).lower(),
                           "mode": next((m.get("mode") for m in reversed(d["messages"]) if m.get("mode")), "General")})
         except Exception:
             continue
@@ -375,7 +364,6 @@ def delete_all():
     new_chat()
 
 
-# ---------------- actions: stop, retry, feedback, pin ----------------
 def stop_generation():
     stop_event.set()
 
@@ -386,7 +374,7 @@ def regenerate():
         idx = len(msgs) - 1
         last, user = msgs.pop(), msgs.pop()
         for k in (f"fb_{ss['current_id']}_{idx}", f"why_{ss['current_id']}_{idx}"):
-            ss.pop(k, None)                       # forget the old rating widgets for this slot
+            ss.pop(k, None)
         if last.get("mode") in MODES:
             ss["mode"] = last["mode"]
         ss["queued"] = user["content"]
@@ -405,7 +393,6 @@ def queue_followup(text):
 
 
 def log_feedback(i):
-    """Append to feedback.jsonl so thumbs up/down can later become training data."""
     m = ss["messages"][i]
     prev = ss["messages"][i - 1]["content"] if i > 0 else ""
     rec = {"ts": time.time(), "chat": ss["current_id"], "mode": m.get("mode"), "prompt": prev,
@@ -443,7 +430,7 @@ def toggle_star(cid):
     try:
         d = json.loads(path.read_text(encoding="utf-8"))
         d["starred"] = not d.get("starred", False)
-        path.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")     # 'updated' stays unchanged
+        path.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         if ss["current_id"] == cid:
             ss["starred"] = d["starred"]
     except Exception:
@@ -451,7 +438,6 @@ def toggle_star(cid):
 
 
 def fork_edit(i, key):
-    """Edit an earlier message: copy the chat up to that point into a NEW chat and ask the edited question there."""
     text = (ss.get(key) or "").strip()
     if not text:
         return
@@ -466,7 +452,6 @@ def continue_generation():
     ss["cont"] = True
 
 
-# ---------------- context window (pinned turns are kept, oldest unpinned turns drop first) ----------------
 def build_context(messages, budget, max_turns=None):
     turns = [(messages[i], messages[i + 1]) for i in range(len(messages) - 1)
              if messages[i]["role"] == "user" and messages[i + 1]["role"] == "assistant"
@@ -476,10 +461,10 @@ def build_context(messages, budget, max_turns=None):
         turns = turns[-max_turns:]
     cost = lambda t: count_tokens(t[0]["content"] + " " + t[1]["content"]) + 12
     chosen, used = set(), 0
-    for idx, t in enumerate(turns):                           # pinned first
+    for idx, t in enumerate(turns):
         if t[1].get("pinned") and used + cost(t) <= budget:
             chosen.add(idx); used += cost(t)
-    for idx in range(len(turns) - 1, -1, -1):                 # then newest -> oldest
+    for idx in range(len(turns) - 1, -1, -1):
         if idx in chosen:
             continue
         c = cost(turns[idx])
@@ -505,7 +490,6 @@ def day_label(ts):
 
 
 def read_chat_input(val):
-    """chat_input returns a plain string, or an object with .text/.files when file attachments are on."""
     if val is None:
         return None, None
     if isinstance(val, str):
@@ -515,7 +499,6 @@ def read_chat_input(val):
     return (get("text") or "").strip(), (files[0] if files else None)
 
 
-# ---------------- finish a generation that was interrupted (Stop button / any other click) ----------------
 if ss.get("gen"):
     stop_event.set()
     g = ss.pop("gen")
@@ -535,6 +518,9 @@ ss["gen"] = None
 
 
 # ---------------- sidebar ----------------
+with ss.sidebar if hasattr(st, "sidebar") else st.sidebar: # syntax helper
+    pass
+
 with st.sidebar:
     st.markdown(f'<div class="side-title">{LOGO_IMG} Tutor</div>', unsafe_allow_html=True)
     st.button("✏️  New chat", on_click=new_chat, use_container_width=True)
@@ -561,23 +547,19 @@ with st.sidebar:
                       on_click=open_chat, args=(c["id"],), use_container_width=True,
                       type="primary" if c["id"] == ss["current_id"] else "secondary")
         row[1].button("★" if c["starred"] else "☆", key=f"star_{c['id']}", on_click=toggle_star, args=(c["id"],),
-                      help="Star this chat to keep it at the top", use_container_width=True)
+                      help="Star this chat", use_container_width=True)
         row[2].button("✕", key=f"del_{c['id']}", on_click=delete_chat, args=(c["id"],),
                       help="Delete this chat", use_container_width=True)
 
     st.divider()
     with st.expander("⚙️  Settings"):
         max_tokens = st.slider("Max response length (tokens)", 200, 1500, 800, step=100)
-        temperature = st.slider("Creativity", 0.1, 1.0, 0.7, step=0.1,
-                                help="Lower = more precise and repeatable. Higher = more varied.")
-        remember = st.toggle("Use earlier messages as context", value=False,
-                             help="Off = every question is answered on its own (how the adapters were trained). "
-                                  "On = earlier turns of this chat are included, newest first, plus any you pinned (📌).")
-        ctx_budget = st.slider("Context budget (tokens)", 1000, 6000, 3000, step=500,
-                               help="How much earlier conversation may be sent with each question.")
+        temperature = st.slider("Creativity", 0.1, 1.0, 0.7, step=0.1)
+        remember = st.toggle("Use earlier messages as context", value=False)
+        ctx_budget = st.slider("Context budget (tokens)", 1000, 6000, 3000, step=500)
         if ss["messages"]:
             md = "\n\n".join(f"**{'You' if m['role'] == 'user' else 'Tutor'}:**\n{m['content']}" for m in ss["messages"])
-            st.download_button("⬇️  Export this chat (.md)", md, file_name="tutor_chat.md", use_container_width=True)
+            st.download_button("⬇️  Export chat (.md)", md, file_name="tutor_chat.md", use_container_width=True)
         if chats:
             sure = st.checkbox("I want to delete all chats")
             st.button("🗑️  Delete all chats", on_click=delete_all, disabled=not sure, use_container_width=True)
@@ -595,8 +577,7 @@ st.markdown(f'<div class="sr-only" role="status" aria-live="polite">{ss.pop("ann
 
 _ver = tuple(int(x) for x in re.findall(r"\d+", st.__version__)[:2])
 if _ver < (1, 40):
-    st.warning(f"Streamlit {st.__version__} is old, so some features are simplified. "
-               "Run `pip install -U streamlit` and restart the app for the full interface.")
+    st.warning(f"Streamlit {st.__version__} is old. Run `pip install -U streamlit` for the full interface.")
 
 fmt = lambda m: f"{MODES[m]['icon']}  {m}"
 if hasattr(st, "segmented_control"):
@@ -610,19 +591,19 @@ st.caption(f"{cfg['icon']} **{mode}** · {cfg['blurb']}")
 expr = ""
 if mode == "Math":
     with st.expander("🧮  SymPy check (optional)", expanded=not ss["messages"]):
-        expr = st.text_input("Expression", key="expr",
-                             help="Examples: diff(x**3 + 5*x, x), integrate(x**2, x), factor(x**2 - 1)")
+        expr = st.text_input("Expression", key="expr")
         if expr.strip():
             res, perr = run_sympy(expr)
             if perr:
                 st.warning(perr)
             else:
                 st.latex(sp.latex(res))
-                st.caption("The model receives this result as a hint, and the answer is checked against it.")
+                st.caption("SymPy verified result.")
 
+# UPDATED: Added png, jpg, py, ipynb to file_type list
 try:
-    raw = st.chat_input(cfg["placeholder"], accept_file=True, file_type=["txt", "md"])
-except TypeError:                                   # older Streamlit without file attachments
+    raw = st.chat_input(cfg["placeholder"], accept_file=True, file_type=["txt", "md", "png", "jpg", "py", "ipynb"])
+except TypeError:                                   
     raw = st.chat_input(cfg["placeholder"])
 prompt, attachment = read_chat_input(raw)
 if prompt is None and attachment is None:
@@ -636,18 +617,17 @@ if not ss["messages"] and not busy:
     for i, ex in enumerate(cfg["examples"]):
         label = ex[0] if isinstance(ex, tuple) else ex
         st.button(label, key=f"ex_{mode}_{i}", on_click=queue_example, args=(ex,), use_container_width=True)
-    st.caption("📎 You can also attach a .txt or .md file (up to ~6,000 characters are read).")
+    st.caption("📎 Attach `.txt`, `.md`, `.py`, `.ipynb`, `.png`, or `.jpg` files (up to 25,000 characters processed).")
 
 
 def stream_into(slot, prefix, gen_msgs, adapter, raw_prompt=None):
-    """Stream a reply into `slot`. Returns (text, error, time_to_first_token, was_stopped, seconds)."""
     err, buf, t0, first, last = {}, "", time.time(), None, 0.0
     for piece in stream_reply(gen_msgs, adapter, temperature, max_tokens, err, raw_prompt):
         if first is None:
             first = time.time() - t0
         buf += piece
         ss["gen"]["text"] = buf
-        if time.time() - last > 0.05:                  # throttle redraws; avoids flicker and layout jumps
+        if time.time() - last > 0.05:
             render_stream(slot, prefix + buf)
             last = time.time()
     was_stopped = stop_event.is_set()
@@ -670,14 +650,13 @@ def render_actions(i, m, is_last):
             st.feedback("thumbs", key=fk, on_change=rate, args=(i, fk))
     pinned = m.get("pinned", False)
     cols[1].button("📌 Pinned" if pinned else "📌 Pin", key=f"pin_{cid}_{i}", on_click=toggle_pin, args=(i,),
-                   type="primary" if pinned else "secondary",
-                   help="Pinned answers are always kept in the context window.")
+                   type="primary" if pinned else "secondary")
     if is_last:
         cols[2].button("🔄 Retry" if m.get("stopped") else "🔄 Regenerate", key=f"regen_{cid}_{i}", on_click=regenerate)
     with cols[3]:
         with popover("📋 Copy"):
             try:
-                st.code(m["content"], language=None, wrap_lines=True)    # st.code has a built-in copy button
+                st.code(m["content"], language=None, wrap_lines=True)
             except TypeError:
                 st.code(m["content"], language=None)
     if m.get("rating") == 0:
@@ -690,7 +669,6 @@ def render_actions(i, m, is_last):
         else:
             st.selectbox("What went wrong?", REASONS, index=None, key=wk, on_change=give_reason, args=(i, wk))
     if is_last and m.get("truncated"):
-        st.caption("✂️ This answer reached the length limit and may be cut off.")
         st.button("▶  Continue", key=f"cont_{cid}_{i}", on_click=continue_generation)
     if is_last and not m.get("stopped"):
         chips = st.columns(3)
@@ -701,7 +679,7 @@ def render_actions(i, m, is_last):
 msgs = ss["messages"]
 for i, m in enumerate(msgs):
     if cont_run and i == len(msgs) - 1:
-        continue                                        # redrawn live below while it continues
+        continue
     with st.chat_message(m["role"], avatar="🧑‍🎓" if m["role"] == "user" else AVATAR):
         if m["role"] == "assistant":
             st.markdown(f'<span class="pill">{m["mode"]}</span>', unsafe_allow_html=True)
@@ -711,27 +689,19 @@ for i, m in enumerate(msgs):
         if m.get("check") == "match":
             st.caption(f"✅ Final result matches SymPy: `{m['sympy']}`")
         elif m.get("check") == "mismatch":
-            st.caption(f"⚠️ SymPy computed `{m['sympy']}` but it was not found in this answer. "
-                       "It may be written differently, so double-check the steps.")
+            st.caption(f"⚠️ SymPy computed `{m['sympy']}` but it was not found in this answer.")
         if m["role"] == "user" and not busy:
             with popover("✏️ Edit"):
                 ek = f"edit_{ss['current_id']}_{i}"
-                st.text_area("Edit this message. It starts a new branch, and this chat stays unchanged.",
-                             value=m["content"], key=ek, height=110)
+                st.text_area("Edit message:", value=m["content"], key=ek, height=110)
                 st.button("Send as new branch", key=f"fork_{ss['current_id']}_{i}", on_click=fork_edit, args=(i, ek))
         if m["role"] == "assistant" and not busy:
             render_actions(i, m, is_last=(i == len(msgs) - 1))
 
 if remember and msgs and not busy:
     _, info = build_context(msgs, ctx_budget)
-    line = f"📚 Context for your next question: {info['included']} of {info['total']} earlier turns · " \
-           f"{info['used']:,} / {info['budget']:,} tokens"
-    if info["pinned"]:
-        line += f" · 📌 {info['pinned']} pinned"
+    line = f"📚 Context: {info['included']} of {info['total']} turns · {info['used']:,} / {info['budget']:,} tokens"
     st.progress(min(info["used"] / info["budget"], 1.0), text=line)
-    if info["dropped"]:
-        st.info(f"{info['dropped']} older turn(s) are left out to fit the context window. "
-                "Pin (📌) an answer to always keep it.")
 
 def fmt_meta(n_tok, secs, ttft):
     ft = f" · first token {ttft:.1f}s" if ttft is not None else ""
@@ -747,7 +717,7 @@ SKELETON = '<div class="skeleton" role="status" aria-label="The tutor is thinkin
 if busy:
     force_ctx, no_hint = ss.pop("force_ctx", False), ss.pop("no_hint", False)
 
-    if cont_run:                                       # ---- continue a cut-off answer
+    if cont_run:
         base, user_m = ss["messages"][-1], ss["messages"][-2]
         with st.chat_message("assistant", avatar=AVATAR):
             st.markdown(f'<span class="pill">{base["mode"]}</span>', unsafe_allow_html=True)
@@ -756,10 +726,10 @@ if busy:
             stop_slot.button("⏹  Stop generating", key="stop_btn", on_click=stop_generation)
             ss["gen"] = {"mode": base["mode"], "text": "", "cont": True}
             raw = ""
-            if base.get("ctx_turns") is not None:        # rebuild the same earlier-turns context the answer used
+            if base.get("ctx_turns") is not None:
                 hist, _ = build_context(ss["messages"][:-2], ctx_budget, max_turns=base["ctx_turns"] or None)
                 raw = "".join(f"<|im_start|>{h['role']}\n{h['content']}<|im_end|>\n" for h in hist)
-            raw += train_prompt(base.get("sent") or user_m["content"]) + base["content"]   # same file text and SymPy hint
+            raw += train_prompt(base.get("sent") or user_m["content"]) + base["content"]
             buf, err, ttft, was_stopped, secs = stream_into(
                 slot, base["content"], [], MODES[base["mode"]]["adapter"], raw_prompt=raw)
             stop_slot.empty()
@@ -774,15 +744,34 @@ if busy:
         if base.get("sympy"):
             base["check"] = sympy_check(base["sympy"], base["content"])
         save_chat()
-        ss["announce"] = "Continuation stopped." if was_stopped else "Continuation complete."
         st.rerun()
 
+    # SMART FILE PARSER FOR NEW FILE TYPES (.ipynb, .py, images, etc.)
     file_text = None
     if attachment is not None:
         try:
-            file_text = attachment.getvalue().decode("utf-8", errors="replace")
-        except Exception:
-            file_text = None
+            filename = attachment.name.lower()
+            file_bytes = attachment.getvalue()
+            
+            if filename.endswith(".ipynb"):
+                # Parse Jupyter notebook cells cleanly
+                nb_data = json.loads(file_bytes.decode("utf-8", errors="replace"))
+                cells_content = []
+                for cell in nb_data.get("cells", []):
+                    ctype = cell.get("cell_type")
+                    source_lines = cell.get("source", [])
+                    source_str = "".join(source_lines) if isinstance(source_lines, list) else source_lines
+                    if ctype in ["code", "markdown"]:
+                        cells_content.append(f"### [{ctype.upper()} CELL]\n{source_str}")
+                file_text = "\n\n".join(cells_content)
+            elif filename.endswith((".png", ".jpg", ".jpeg")):
+                file_text = f"[Image Attached: {attachment.name}]"
+            else:
+                # Text, Markdown, Python scripts (.py), etc.
+                file_text = file_bytes.decode("utf-8", errors="replace")
+        except Exception as e:
+            file_text = f"[Error reading file: {e}]"
+
     shown_prompt = (prompt or "").strip() or (FILE_DEFAULTS[mode] if file_text is not None else "")
     user_msg = shown_prompt
     if file_text is not None:
@@ -804,14 +793,14 @@ if busy:
         history, _ = build_context(ss["messages"], ctx_budget, max_turns=1 if (force_ctx and not remember) else None)
 
     ss["messages"].append({"role": "user", "content": shown_prompt})
-    save_chat()                                   # saved immediately so the chat appears in the sidebar
+    save_chat()
     with st.chat_message("user", avatar="🧑‍🎓"):
         st.markdown(shown_prompt)
 
     with st.chat_message("assistant", avatar=AVATAR):
         st.markdown(f'<span class="pill">{mode}</span>', unsafe_allow_html=True)
         slot, stop_slot = st.empty(), st.empty()
-        slot.markdown(SKELETON, unsafe_allow_html=True)          # skeleton until the first token arrives
+        slot.markdown(SKELETON, unsafe_allow_html=True)
         stop_slot.button("⏹  Stop generating", key="stop_btn", on_click=stop_generation)
         ctx_turns = None if not (remember or force_ctx) else (1 if (force_ctx and not remember) else 0)
         ss["gen"] = {"mode": mode, "text": "", "sympy": sympy_str, "sent": user_msg, "ctx_turns": ctx_turns}
@@ -829,7 +818,7 @@ if busy:
         if was_stopped:
             new_msg.update(stopped=True, meta=f"⏹ Stopped · {n_tok} tokens")
         elif not err and n_tok >= max_tokens - 2:
-            new_msg["truncated"] = True                 # hit the length limit: offer a Continue button
+            new_msg["truncated"] = True
         if err:
             new_msg["meta"] += f" · ⚠️ interrupted: {err['e']}"
         if sympy_str and not was_stopped:
@@ -837,9 +826,6 @@ if busy:
             new_msg["check"] = sympy_check(sympy_str, buf)
     ss["messages"].append(new_msg)
     save_chat()
-    ss["announce"] = "Response stopped." if new_msg.get("stopped") else \
-                     "Something went wrong." if new_msg.get("error") else "Response complete."
-    st.rerun()                                    # refresh the sidebar list, action buttons and context line
+    st.rerun()
 
-st.caption("AI-generated answers can contain mistakes, and there are no web sources: check important facts. "
-           "The ✅ badge is an automatic SymPy comparison, not a guarantee.")
+st.caption("AI-generated answers can contain mistakes. Check important facts.")
