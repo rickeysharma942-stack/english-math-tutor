@@ -17,19 +17,16 @@ from peft import PeftModel
 
 # ---------------- EDIT THESE ----------------
 GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
-RELEASE_TAG = "chatbot"                                    # the TAG of the release (not its title)
+RELEASE_TAG = "chatbot"                                    # the TAG of the release (not its title "model-v2")
 
-# File names exactly as they appear in the GitHub Release
+# File names exactly as they appear in the GitHub Release:
+#   english_adapter_config.json, english_adapter_model.safetensors, and the same two for math and general
 ASSETS = {
-    "english_adapter": {"adapter_config.json": "adapter_config_english.json",
-                        "adapter_model.safetensors": "adapter_model_english.safetensors"},
-    "math_adapter":    {"adapter_config.json": "adapter_config_math.json",
-                        "adapter_model.safetensors": "adapter_model.safetensors"},
-    # Stopgap: no general adapter exists yet, so General mode borrows the English files.
-    # When you publish the new release, use these names instead:
-    #   general_adapter_config.json / general_adapter_model.safetensors
-    "general_adapter": {"adapter_config.json": "adapter_config_english.json",
-                        "adapter_model.safetensors": "adapter_model_english.safetensors"},
+    name: {
+        "adapter_config.json": f"{short}_adapter_config.json",
+        "adapter_model.safetensors": f"{short}_adapter_model.safetensors",
+    }
+    for name, short in [("english_adapter", "english"), ("math_adapter", "math"), ("general_adapter", "general")]
 }
 # --------------------------------------------
 
