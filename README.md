@@ -79,7 +79,7 @@ flowchart LR
 └── README.md
 ```
 
-Adapter weights are stored as **GitHub Release assets**, not in the repo itself. Attach these four files to a release, for example tagged `v1.0`:
+Adapter weights are stored as **GitHub Release assets**, not in the repo itself. Attach these four files to a release, for example tagged `v2.0`:
 
 ```
 english_adapter_config.json
