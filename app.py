@@ -137,16 +137,12 @@ st.markdown(
       .brand { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
       .brand img, .brand .emoji { width:54px; height:54px; border-radius:16px; object-fit:cover; }
       .brand .emoji { display:flex; align-items:center; justify-content:center; font-size:30px;
-                     background:linear-gradient(135deg,#6366f1,#22d3ee); color:white; }
+                      background:linear-gradient(135deg,#6366f1,#22d3ee); color:white; }
       .brand .title { font-size:1.55rem; font-weight:800; line-height:1.1; }
       .brand .subtitle { color:#64748b; font-size:.88rem; }
       .file-chip { display:inline-block; background:rgba(99,102,241,.15); color:#a5b4fc;
                    border:1px solid rgba(99,102,241,.35); padding:3px 10px; border-radius:999px;
                    font-size:.76rem; margin:3px 4px 3px 0; }
-      .chat-user { background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(34,211,238,.12));
-                   border:1px solid rgba(99,102,241,.28); border-radius:16px; padding:14px 16px; }
-      .chat-bot { background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.20);
-                  border-radius:16px; padding:14px 16px; }
       .small-muted { color:#94a3b8; font-size:.82rem; }
       div[data-testid="stFileUploaderDropzone"] { border-radius:16px; }
     </style>
@@ -160,11 +156,13 @@ st.markdown(LOGO_HTML, unsafe_allow_html=True)
 
 def get_base_model_id():
     value = os.environ.get("BASE_MODEL")
+
     if not value:
         try:
             value = st.secrets.get("BASE_MODEL")
         except Exception:
             value = None
+
     return value
 
 
@@ -185,6 +183,7 @@ def download_file(url: str, dest: Path):
 
     with requests.get(url, stream=True, timeout=60, allow_redirects=True) as r:
         r.raise_for_status()
+
         with open(tmp, "wb") as f:
             for chunk in r.iter_content(chunk_size=1024 * 1024):
                 if chunk:
@@ -199,6 +198,7 @@ def ensure_adapters():
     for adapter_name, files in ASSETS.items():
         for local_name, asset_name in files.items():
             dest = ADAPTER_DIR / adapter_name / local_name
+
             if not dest.exists():
                 download_file(f"{base_url}/{asset_name}", dest)
 
@@ -228,6 +228,7 @@ def load_model():
         str(ADAPTER_DIR / "english_adapter"),
         adapter_name="english_adapter",
     )
+
     model.load_adapter(str(ADAPTER_DIR / "math_adapter"), adapter_name="math_adapter")
     model.load_adapter(str(ADAPTER_DIR / "general_adapter"), adapter_name="general_adapter")
     model.eval()
@@ -286,7 +287,9 @@ def extract_text_from_zip_bytes(data: bytes, original_name: str) -> str:
                 if lower.endswith("__MACOSX") or name.startswith("__MACOSX/"):
                     continue
 
-                if lower.endswith((".xml", ".txt", ".html", ".htm", ".xhtml", ".md", ".json", ".csv")):
+                if lower.endswith(
+                    (".xml", ".txt", ".html", ".htm", ".xhtml", ".md", ".json", ".csv")
+                ):
                     useful.append(name)
 
             priority = [
@@ -347,6 +350,7 @@ def extract_pdf_with_pypdf(data: bytes) -> str:
 
         for i, page in enumerate(reader.pages):
             text = page.extract_text() or ""
+
             if text.strip():
                 pages.append(f"--- Page {i + 1} ---\n{text.strip()}")
 
@@ -383,7 +387,8 @@ def convert_with_libreoffice(data: bytes, original_name: str) -> str:
             if out.exists():
                 return out.read_text(encoding="utf-8", errors="replace")
 
-            return f"[LibreOffice conversion failed for {original_name}.]{result.stderr.decode(errors='replace')[:500]}"
+            stderr = result.stderr.decode(errors="replace")[:500]
+            return f"[LibreOffice conversion failed for {original_name}.] {stderr}"
 
     except FileNotFoundError:
         return ""
@@ -405,6 +410,7 @@ def extract_docx(data: bytes) -> str:
         for table in doc.tables:
             for row in table.rows:
                 cells = [c.text.strip() for c in row.cells if c.text.strip()]
+
                 if cells:
                     parts.append(" | ".join(cells))
 
@@ -499,7 +505,7 @@ def extract_text_from_upload(uploaded_file) -> str:
             return converted
 
         return (
-            f"[Legacy format {ext} could not be converted. Install LibreOffice for support: "
+            f"[Legacy format {ext} could not be converted. Install LibreOffice: "
             "`sudo apt install libreoffice`.]"
         )
 
@@ -515,18 +521,20 @@ def extract_text_from_upload(uploaded_file) -> str:
     return f"[Binary or unsupported file: {name} ({ext})]"
 
 
-def make_file_context(files) -> tuple[str, list[str]]:
+def make_file_context(files):
     contexts = []
     chips = []
 
     for uploaded in files[:8]:
         raw_text = extract_text_from_upload(uploaded)
         text = raw_text[:MAX_FILE_CHARS]
+
         contexts.append(
             f"### Uploaded file: {uploaded.name}\n"
             f"Type: {uploaded.type or 'unknown'}\n\n"
             f"{text}"
         )
+
         chips.append(uploaded.name)
 
     joined = "\n\n".join(contexts)
@@ -653,7 +661,8 @@ def safe_markdown(text: str) -> str:
     if text.count("```") % 2:
         text += "\n```"
 
-    if text.count("$$") \% 2: text += "$$"
+    if text.count("$$") % 2:
+        text += "$$"
 
     return text
 
@@ -794,12 +803,13 @@ mode_cols = st.columns(3)
 
 for i, (name, cfg) in enumerate(MODES.items()):
     with mode_cols[i]:
-        is_selected = (name == mode)
+        is_selected = name == mode
+
         if st.button(
             f"{cfg['icon']}  {name}\n\n{cfg['blurb']}",
             key=f"mode_card_{name}",
             use_container_width=True,
-            type="primary" if is_selected else "secondary"
+            type="primary" if is_selected else "secondary",
         ):
             if st.session_state.mode != name:
                 st.session_state.mode = name
@@ -985,7 +995,7 @@ if ss.messages:
 
     with action_cols[2]:
         if st.button("⬇️ Export Markdown", use_container_width=True):
-            md_lines = [f"# Tutor Studio Chat\n"]
+            md_lines = ["# Tutor Studio Chat\n"]
 
             for m in ss.messages:
                 label = "You" if m["role"] == "user" else "Assistant"
