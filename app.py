@@ -18,7 +18,7 @@ from peft import PeftModel
 
 # ---------------- EDIT THESE ----------------
 GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
-RELEASE_TAG = "chatbot"                                    # the TAG of the release (not its title "model-v2")
+RELEASE_TAG = "chatbot"                                    # the TAG of the release
 
 # File names exactly as they appear in the GitHub Release:
 ASSETS = {
@@ -30,7 +30,7 @@ ASSETS = {
 }
 # --------------------------------------------
 
-ADAPTER_DIR = Path("adapters") / RELEASE_TAG   # one folder per release tag, so old files are never reused
+ADAPTER_DIR = Path("adapters") / RELEASE_TAG
 CHAT_DIR = Path(os.environ.get("CHAT_DIR", "chats"))
 CHAT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -61,46 +61,45 @@ MODES = {
     },
 }
 
-# ---------------- logo (logo.png must sit next to app.py) ----------------
+# ---------------- logo configuration ----------------
 LOGO_PATH = Path(__file__).parent / "logo.png"
 if LOGO_PATH.exists():
     _b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
     LOGO_IMG = f'<img class="logo" src="data:image/png;base64,{_b64}" alt="">'
     AVATAR = PAGE_ICON = str(LOGO_PATH)
-else:                                                   
+else:
     LOGO_IMG, AVATAR, PAGE_ICON = "✨", "✨", "✨"
 
 st.set_page_config(page_title="English + Math Tutor", page_icon=PAGE_ICON, layout="centered")
 
+# ---------------- Upgraded Modern UI Styling ----------------
 st.markdown("""
 <style>
-.block-container {max-width: 820px; padding-top: 1.4rem;}
-.hero {padding: .9rem 1.2rem; border-radius: 16px; margin-bottom: .8rem;
-       background: linear-gradient(135deg, rgba(41,221,245,.22), rgba(41,245,183,.16));
-       border: 1px solid rgba(128,128,128,.4);}
-.hero h1 {margin: 0; font-size: 1.55rem; line-height: 1.2;}
-.logo {height: 1.9rem; width: auto; vertical-align: -0.45rem; margin-right: .55rem;}
-.side-title {font-size: 1.45rem; font-weight: 700; margin-bottom: .4rem;}
-.side-title .logo {height: 1.6rem; vertical-align: -0.3rem;}
-.hero p {margin: .2rem 0 0 0; opacity: .9; font-size: .9rem;}
-.pill {display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .78rem;
-       border: 1px solid rgba(128,128,128,.55);}
-div[data-testid="stChatMessage"] {border-radius: 14px;}
-div.stButton > button {border-radius: 12px;}
-section[data-testid="stSidebar"] div.stButton > button {justify-content: flex-start; text-align: left; padding: .35rem .7rem;}
+.block-container {max-width: 860px; padding-top: 1.8rem; padding-bottom: 3rem;}
+.hero {padding: 1.2rem 1.5rem; border-radius: 18px; margin-bottom: 1.2rem;
+       background: linear-gradient(135deg, rgba(41,221,245,0.18), rgba(41,245,183,0.12));
+       border: 1px solid rgba(128,128,128,0.25);
+       box-shadow: 0 4px 20px rgba(0,0,0,0.03);}
+.hero h1 {margin: 0; font-size: 1.7rem; line-height: 1.3; font-weight: 700;}
+.logo {height: 2rem; width: auto; vertical-align: -0.4rem; margin-right: 0.6rem;}
+.side-title {font-size: 1.4rem; font-weight: 700; margin-bottom: 0.6rem; display: flex; align-items: center;}
+.side-title .logo {height: 1.5rem; vertical-align: -0.2rem;}
+.hero p {margin: 0.4rem 0 0 0; opacity: 0.85; font-size: 0.95rem;}
+.pill {display: inline-block; padding: 0.15rem 0.65rem; border-radius: 999px; font-size: 0.75rem;
+       font-weight: 600; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.3); margin-bottom: 0.5rem;}
+div[data-testid="stChatMessage"] {border-radius: 16px; padding: 1rem; margin-bottom: 0.8rem; border: 1px solid rgba(128,128,128,0.15);}
+div.stButton > button {border-radius: 12px; font-weight: 500; transition: all 0.2s ease;}
+section[data-testid="stSidebar"] div.stButton > button {justify-content: flex-start; text-align: left; padding: 0.4rem 0.8rem;}
 section[data-testid="stSidebar"] div.stButton > button p {white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
-.hist-label {font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; opacity: .8; margin: .8rem 0 .2rem .2rem;}
-button:focus-visible, textarea:focus-visible, input:focus-visible, [role="radio"]:focus-visible, [role="tab"]:focus-visible
-  {outline: 3px solid #0891b2 !important; outline-offset: 2px !important;}
+.hist-label {font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; margin: 1rem 0 0.3rem 0.3rem; font-weight: 700;}
+button:focus-visible, textarea:focus-visible, input:focus-visible {outline: 3px solid #0891b2 !important; outline-offset: 2px !important;}
 .sr-only {position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;}
-@media (prefers-reduced-motion: reduce) {* {animation: none !important; transition: none !important;}}
-.skeleton {height: 3.4rem; border-radius: 10px;
-  background: linear-gradient(90deg, rgba(128,128,128,.18) 25%, rgba(128,128,128,.34) 37%, rgba(128,128,128,.18) 63%);
+.skeleton {height: 3.8rem; border-radius: 12px;
+  background: linear-gradient(90deg, rgba(128,128,128,0.1) 25%, rgba(128,128,128,0.25) 37%, rgba(128,128,128,0.1) 63%);
   background-size: 400% 100%; animation: shimmer 1.4s ease infinite;}
 @keyframes shimmer {0% {background-position: 100% 0} 100% {background-position: 0 0}}
 </style>
 """, unsafe_allow_html=True)
-
 
 # ---------------- model loading ----------------
 def get_base_model_id():
@@ -112,16 +111,14 @@ def get_base_model_id():
             value = None
     return value
 
-
 BASE_MODEL = get_base_model_id()
 if not BASE_MODEL:
     st.error("BASE_MODEL is not set. Set it as an environment variable or a Streamlit secret.")
     st.stop()
 
 if not torch.cuda.is_available():
-    st.error("No GPU found. This model needs an NVIDIA GPU.")
+    st.error("No GPU found. This model needs an NVIDIA GPU (for example a Colab or Kaggle T4).")
     st.stop()
-
 
 def download_file(url: str, dest: Path):
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -133,7 +130,6 @@ def download_file(url: str, dest: Path):
                 f.write(chunk)
     tmp.replace(dest)
 
-
 def ensure_adapters():
     base_url = f"https://github.com/{GITHUB_REPO}/releases/download/{RELEASE_TAG}"
     for adapter_name, files in ASSETS.items():
@@ -141,7 +137,6 @@ def ensure_adapters():
             dest = ADAPTER_DIR / adapter_name / local_name
             if not dest.exists():
                 download_file(f"{base_url}/{asset_name}", dest)
-
 
 @st.cache_resource(show_spinner="Loading model... (first run downloads files and takes a few minutes)")
 def load_model():
@@ -152,7 +147,7 @@ def load_model():
     )
     tok = AutoTokenizer.from_pretrained(BASE_MODEL)
     base = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, quantization_config=bnb, device_map={"": 0}, dtype=torch.float16
+        BASE_MODEL, quantization_config=bnb, device_map={"": 0}, torch_dtype=torch.float16
     )
     mdl = PeftModel.from_pretrained(base, str(ADAPTER_DIR / "english_adapter"), adapter_name="english_adapter")
     mdl.load_adapter(str(ADAPTER_DIR / "math_adapter"), adapter_name="math_adapter")
@@ -160,15 +155,14 @@ def load_model():
     mdl.eval()
     return tok, mdl, threading.Lock(), threading.Event()
 
-
 try:
     tokenizer, model, gen_lock, stop_event = load_model()
 except requests.HTTPError as e:
-    st.error(f"Could not download adapter files: {e}.")
+    st.error(f"Could not download adapter files from the GitHub Release: {e}. "
+             "Check GITHUB_REPO, RELEASE_TAG and asset names.")
     st.stop()
 
-
-# ---------------- SymPy (restricted parser) ----------------
+# ---------------- SymPy Parser ----------------
 _NAMES = ["diff", "integrate", "limit", "solve", "simplify", "expand", "factor", "cancel", "apart",
           "trigsimp", "series", "summation", "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh",
           "tanh", "exp", "log", "sqrt", "Abs", "factorial", "binomial", "gcd", "lcm", "Rational", "oo",
@@ -177,7 +171,6 @@ SAFE = {n: getattr(sp, n) for n in _NAMES if hasattr(sp, n)}
 SAFE.update({s: sp.Symbol(s) for s in "xyztnabc"})
 _TRANSFORMS = standard_transformations + (convert_xor,)
 _ALLOWED = re.compile(r"[A-Za-z0-9_+\-*/^().,\s]*")
-
 
 def run_sympy(expr: str):
     if len(expr) > 200 or "__" in expr or not _ALLOWED.fullmatch(expr):
@@ -188,11 +181,9 @@ def run_sympy(expr: str):
     except Exception as e:
         return None, f"{type(e).__name__}: {str(e)[:120]}"
 
-
-# ---------------- generation ----------------
+# ---------------- Generation Streamer ----------------
 class _Stopped(Exception):
     pass
-
 
 class StoppableStreamer(TextIteratorStreamer):
     def __init__(self, tok, ev, **kw):
@@ -203,7 +194,6 @@ class StoppableStreamer(TextIteratorStreamer):
         if self._ev.is_set():
             raise _Stopped()
         super().put(value)
-
 
 def stream_reply(messages, adapter, temperature, max_new_tokens, err, raw_prompt=None):
     text = raw_prompt if raw_prompt is not None else tokenizer.apply_chat_template(
@@ -233,14 +223,12 @@ def stream_reply(messages, adapter, temperature, max_new_tokens, err, raw_prompt
     for piece in streamer:
         yield piece
 
-
-# ---------------- text helpers ----------------
+# ---------------- Text Helpers ----------------
 def safe_markdown(t: str) -> str:
     if t.count("```") % 2:
         t += "\n```"
     if t.count("$$") \% 2: t += "$$"
     return t
-
 
 def render_stream(slot, text: str, final: bool = False):
     if final:
@@ -249,17 +237,14 @@ def render_stream(slot, text: str, final: bool = False):
     held = text[: max(text.rfind(" "), text.rfind("\n")) + 1] or text
     slot.markdown(safe_markdown(held) + " ▌")
 
-
 def normalize_math(s: str) -> str:
     for a, b in {"**": "^", "²": "^2", "³": "^3", "⁴": "^4", "⁵": "^5",
                  "\\cdot": "", "\\left": "", "\\right": ""}.items():
         s = s.replace(a, b)
     return re.sub(r"[\s*${}\\]", "", s)
 
-
 def popover(label):
     return st.popover(label) if hasattr(st, "popover") else st.expander(label)
-
 
 def columns(spec, **kw):
     try:
@@ -267,12 +252,10 @@ def columns(spec, **kw):
     except TypeError:
         return st.columns(spec, **kw)
 
-
 def count_tokens(t: str) -> int:
     return len(tokenizer(t, add_special_tokens=False)["input_ids"])
 
-
-# ---------------- state ----------------
+# ---------------- State Initialization ----------------
 ss = st.session_state
 ss.setdefault("messages", [])
 ss.setdefault("current_id", None)
@@ -289,22 +272,17 @@ FOLLOWUPS = {
 FILE_DEFAULTS = {"English": "Proofread this text and explain each correction in detail:",
                  "Math": "Solve the problems in this text step by step:",
                  "General": "Summarize and explain this text:"}
-
-# INCREASED FILE CHARACTER LIMIT (e.g. 25,000 characters)
-MAX_FILE_CHARS = 25000 
-
+MAX_FILE_CHARS = 6000
 
 def train_prompt(user: str) -> str:
     return f"<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 
-
-# ---------------- chat history ----------------
+# ---------------- Chat History Persistence ----------------
 def make_title(text: str) -> str:
     t = re.sub(r"\s+", " ", text).strip()
     t = re.sub(r"^Correct the grammar and explain in detail:\s*", "Grammar: ", t)
     t = re.sub(r"^Explain step by step the derivative of:\s*", "Derivative: ", t)
     return t[:42] + ("…" if len(t) > 42 else "")
-
 
 def save_chat():
     if not ss["messages"]:
@@ -321,7 +299,6 @@ def save_chat():
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
 
-
 def list_chats():
     chats = []
     for p in CHAT_DIR.glob("*.json"):
@@ -335,10 +312,8 @@ def list_chats():
             continue
     return sorted(chats, key=lambda c: c["updated"], reverse=True)
 
-
 def new_chat():
     ss["current_id"], ss["title"], ss["messages"], ss["starred"] = None, None, [], False
-
 
 def open_chat(cid):
     try:
@@ -351,22 +326,19 @@ def open_chat(cid):
     if last in MODES:
         ss["mode"] = last
 
-
 def delete_chat(cid):
     (CHAT_DIR / f"{cid}.json").unlink(missing_ok=True)
     if ss["current_id"] == cid:
         new_chat()
-
 
 def delete_all():
     for p in CHAT_DIR.glob("*.json"):
         p.unlink(missing_ok=True)
     new_chat()
 
-
+# ---------------- Action Handlers ----------------
 def stop_generation():
     stop_event.set()
-
 
 def regenerate():
     msgs = ss["messages"]
@@ -380,17 +352,14 @@ def regenerate():
         ss["queued"] = user["content"]
         ss["no_hint"] = False
 
-
 def queue_example(ex):
     if isinstance(ex, tuple):
         ss["queued"], ss["expr"] = ex[0], ex[1]
     else:
         ss["queued"] = ex
 
-
 def queue_followup(text):
     ss["queued"], ss["force_ctx"], ss["no_hint"] = text, True, True
-
 
 def log_feedback(i):
     m = ss["messages"][i]
@@ -399,7 +368,6 @@ def log_feedback(i):
            "reply": m["content"], "rating": m.get("rating"), "reason": m.get("reason")}
     with open(CHAT_DIR / "feedback.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
 
 def rate(i, key):
     m, v = ss["messages"][i], ss.get(key)
@@ -412,18 +380,15 @@ def rate(i, key):
     save_chat()
     log_feedback(i)
 
-
 def give_reason(i, key):
     ss["messages"][i]["reason"] = ss.get(key)
     save_chat()
     log_feedback(i)
 
-
 def toggle_pin(i):
     m = ss["messages"][i]
     m["pinned"] = not m.get("pinned", False)
     save_chat()
-
 
 def toggle_star(cid):
     path = CHAT_DIR / f"{cid}.json"
@@ -436,7 +401,6 @@ def toggle_star(cid):
     except Exception:
         pass
 
-
 def fork_edit(i, key):
     text = (ss.get(key) or "").strip()
     if not text:
@@ -447,11 +411,10 @@ def fork_edit(i, key):
     ss["title"] = f"{old_title} (edited)" if (base and old_title) else None
     ss["queued"], ss["no_hint"] = text, False
 
-
 def continue_generation():
     ss["cont"] = True
 
-
+# ---------------- Context Window ----------------
 def build_context(messages, budget, max_turns=None):
     turns = [(messages[i], messages[i + 1]) for i in range(len(messages) - 1)
              if messages[i]["role"] == "user" and messages[i + 1]["role"] == "assistant"
@@ -479,7 +442,6 @@ def build_context(messages, budget, max_turns=None):
     return history, {"total": total, "included": len(chosen), "dropped": total - len(chosen),
                      "pinned": pinned, "used": used, "budget": budget}
 
-
 def day_label(ts):
     d = datetime.fromtimestamp(ts).date()
     if d == date.today():
@@ -487,7 +449,6 @@ def day_label(ts):
     if d == date.today() - timedelta(days=1):
         return "Yesterday"
     return "Earlier"
-
 
 def read_chat_input(val):
     if val is None:
@@ -498,7 +459,7 @@ def read_chat_input(val):
     files = get("files") or []
     return (get("text") or "").strip(), (files[0] if files else None)
 
-
+# Handle interrupted generation safely
 if ss.get("gen"):
     stop_event.set()
     g = ss.pop("gen")
@@ -516,11 +477,7 @@ if ss.get("gen"):
     ss["announce"] = "Generation stopped."
 ss["gen"] = None
 
-
-# ---------------- sidebar ----------------
-with ss.sidebar if hasattr(st, "sidebar") else st.sidebar: # syntax helper
-    pass
-
+# ---------------- Sidebar Layout ----------------
 with st.sidebar:
     st.markdown(f'<div class="side-title">{LOGO_IMG} Tutor</div>', unsafe_allow_html=True)
     st.button("✏️  New chat", on_click=new_chat, use_container_width=True)
@@ -528,7 +485,7 @@ with st.sidebar:
     chats = list_chats()
     query = ""
     if len(chats) > 6:
-        query = st.text_input("Search chats", placeholder="🔎  Search titles and messages", label_visibility="collapsed").strip().lower()
+        query = st.text_input("Search chats", placeholder="🔎  Search titles...", label_visibility="collapsed").strip().lower()
     shown = [c for c in chats if query in c["title"].lower() or query in c["blob"]]
     shown = sorted(shown, key=lambda c: (not c["starred"], -c["updated"]))[:40]
 
@@ -536,6 +493,7 @@ with st.sidebar:
         st.caption("Your conversations will appear here.")
     elif not shown:
         st.caption("No chats match your search.")
+    
     last_label = None
     for c in shown:
         label = "⭐ Starred" if c["starred"] else day_label(c["updated"])
@@ -549,7 +507,7 @@ with st.sidebar:
         row[1].button("★" if c["starred"] else "☆", key=f"star_{c['id']}", on_click=toggle_star, args=(c["id"],),
                       help="Star this chat", use_container_width=True)
         row[2].button("✕", key=f"del_{c['id']}", on_click=delete_chat, args=(c["id"],),
-                      help="Delete this chat", use_container_width=True)
+                      help="Delete chat", use_container_width=True)
 
     st.divider()
     with st.expander("⚙️  Settings"):
@@ -565,25 +523,21 @@ with st.sidebar:
             st.button("🗑️  Delete all chats", on_click=delete_all, disabled=not sure, use_container_width=True)
     st.caption(f"🟢 Model ready · {torch.cuda.get_device_name(0)}")
 
-
-# ---------------- main area ----------------
+# ---------------- Main Interface ----------------
 st.markdown(
     f'<div class="hero"><h1>{LOGO_IMG}English + Math Tutor</h1>'
-    '<p>Three LoRA adapters, three superpowers: sharper English, clearer math, '
-    'and detailed answers to anything you ask.</p></div>',
+    '<p>Three LoRA adapters powering sharper English, clearer math, '
+    'and expert general assistance.</p></div>',
     unsafe_allow_html=True)
 st.markdown(f'<div class="sr-only" role="status" aria-live="polite">{ss.pop("announce", "")}</div>',
             unsafe_allow_html=True)
-
-_ver = tuple(int(x) for x in re.findall(r"\d+", st.__version__)[:2])
-if _ver < (1, 40):
-    st.warning(f"Streamlit {st.__version__} is old. Run `pip install -U streamlit` for the full interface.")
 
 fmt = lambda m: f"{MODES[m]['icon']}  {m}"
 if hasattr(st, "segmented_control"):
     st.segmented_control("Mode", list(MODES), format_func=fmt, key="mode", label_visibility="collapsed")
 else:
     st.radio("Mode", list(MODES), format_func=fmt, key="mode", horizontal=True, label_visibility="collapsed")
+
 mode = ss["mode"] if ss.get("mode") in MODES else "General"
 cfg = MODES[mode]
 st.caption(f"{cfg['icon']} **{mode}** · {cfg['blurb']}")
@@ -598,27 +552,27 @@ if mode == "Math":
                 st.warning(perr)
             else:
                 st.latex(sp.latex(res))
-                st.caption("SymPy verified result.")
+                st.caption("SymPy verification check active.")
 
-# UPDATED: Added png, jpg, py, ipynb to file_type list
 try:
-    raw = st.chat_input(cfg["placeholder"], accept_file=True, file_type=["txt", "md", "png", "jpg", "py", "ipynb"])
-except TypeError:                                   
+    raw = st.chat_input(cfg["placeholder"], accept_file=True, file_type=["txt", "md"])
+except TypeError:
     raw = st.chat_input(cfg["placeholder"])
+
 prompt, attachment = read_chat_input(raw)
 if prompt is None and attachment is None:
     prompt = ss.pop("queued", None)
+
 cont_run = bool(ss.pop("cont", False)) and not prompt and attachment is None and len(ss["messages"]) >= 2 \
     and ss["messages"][-1]["role"] == "assistant"
 busy = bool(prompt) or attachment is not None or cont_run
 
 if not ss["messages"] and not busy:
-    st.markdown("##### Try one of these, or type your own below")
+    st.markdown("##### Try one of these prompts or type below:")
     for i, ex in enumerate(cfg["examples"]):
         label = ex[0] if isinstance(ex, tuple) else ex
         st.button(label, key=f"ex_{mode}_{i}", on_click=queue_example, args=(ex,), use_container_width=True)
-    st.caption("📎 Attach `.txt`, `.md`, `.py`, `.ipynb`, `.png`, or `.jpg` files (up to 25,000 characters processed).")
-
+    st.caption("📎 You can attach a .txt or .md file.")
 
 def stream_into(slot, prefix, gen_msgs, adapter, raw_prompt=None):
     err, buf, t0, first, last = {}, "", time.time(), None, 0.0
@@ -633,7 +587,6 @@ def stream_into(slot, prefix, gen_msgs, adapter, raw_prompt=None):
     was_stopped = stop_event.is_set()
     render_stream(slot, prefix + buf, final=True)
     return buf, err, first, was_stopped, max(time.time() - t0, 1e-3)
-
 
 def render_actions(i, m, is_last):
     cid = ss["current_id"]
@@ -675,7 +628,6 @@ def render_actions(i, m, is_last):
         for c, text in zip(chips, FOLLOWUPS[mode]):
             c.button(text, key=f"fu_{cid}_{i}_{text[:10]}", on_click=queue_followup, args=(text,), use_container_width=True)
 
-
 msgs = ss["messages"]
 for i, m in enumerate(msgs):
     if cont_run and i == len(msgs) - 1:
@@ -689,7 +641,7 @@ for i, m in enumerate(msgs):
         if m.get("check") == "match":
             st.caption(f"✅ Final result matches SymPy: `{m['sympy']}`")
         elif m.get("check") == "mismatch":
-            st.caption(f"⚠️ SymPy computed `{m['sympy']}` but it was not found in this answer.")
+            st.caption(f"⚠️ SymPy computed `{m['sympy']}` but it was not found verbatim.")
         if m["role"] == "user" and not busy:
             with popover("✏️ Edit"):
                 ek = f"edit_{ss['current_id']}_{i}"
@@ -707,12 +659,10 @@ def fmt_meta(n_tok, secs, ttft):
     ft = f" · first token {ttft:.1f}s" if ttft is not None else ""
     return f"{n_tok} tokens · {n_tok / secs:.1f} tok/s{ft} · {secs:.0f}s"
 
-
 def sympy_check(sympy_str, text):
     return "match" if normalize_math(sympy_str) in normalize_math(text) else "mismatch"
 
-
-SKELETON = '<div class="skeleton" role="status" aria-label="The tutor is thinking"></div>'
+SKELETON = '<div class="skeleton" role="status" aria-label="Thinking"></div>'
 
 if busy:
     force_ctx, no_hint = ss.pop("force_ctx", False), ss.pop("no_hint", False)
@@ -737,47 +687,24 @@ if busy:
         n_new = count_tokens(buf) if buf else 0
         base["content"] += buf
         base["truncated"] = (not was_stopped) and (not err) and n_new >= max_tokens - 2
-        base["meta"] = (base.get("meta", "").split(" · continued")[0]
-                        + f" · continued +{n_new} tokens" + (" · ⏹ stopped" if was_stopped else ""))
+        base["meta"] = (base.get("meta", "").split(" · continued")[0] + f" · continued +{n_new} tokens")
         if was_stopped:
             base["stopped"] = True
-        if base.get("sympy"):
-            base["check"] = sympy_check(base["sympy"], base["content"])
         save_chat()
         st.rerun()
 
-    # SMART FILE PARSER FOR NEW FILE TYPES (.ipynb, .py, images, etc.)
     file_text = None
     if attachment is not None:
         try:
-            filename = attachment.name.lower()
-            file_bytes = attachment.getvalue()
-            
-            if filename.endswith(".ipynb"):
-                # Parse Jupyter notebook cells cleanly
-                nb_data = json.loads(file_bytes.decode("utf-8", errors="replace"))
-                cells_content = []
-                for cell in nb_data.get("cells", []):
-                    ctype = cell.get("cell_type")
-                    source_lines = cell.get("source", [])
-                    source_str = "".join(source_lines) if isinstance(source_lines, list) else source_lines
-                    if ctype in ["code", "markdown"]:
-                        cells_content.append(f"### [{ctype.upper()} CELL]\n{source_str}")
-                file_text = "\n\n".join(cells_content)
-            elif filename.endswith((".png", ".jpg", ".jpeg")):
-                file_text = f"[Image Attached: {attachment.name}]"
-            else:
-                # Text, Markdown, Python scripts (.py), etc.
-                file_text = file_bytes.decode("utf-8", errors="replace")
-        except Exception as e:
-            file_text = f"[Error reading file: {e}]"
-
+            file_text = attachment.getvalue().decode("utf-8", errors="replace")
+        except Exception:
+            file_text = None
     shown_prompt = (prompt or "").strip() or (FILE_DEFAULTS[mode] if file_text is not None else "")
     user_msg = shown_prompt
     if file_text is not None:
         cut = len(file_text) > MAX_FILE_CHARS
         user_msg += f"\n\n---\n{file_text[:MAX_FILE_CHARS]}\n---"
-        shown_prompt += f"\n\n📎 *{attachment.name}*" + (f" (first {MAX_FILE_CHARS:,} characters used)" if cut else "")
+        shown_prompt += f"\n\n📎 *{attachment.name}*" + (f" (first {MAX_FILE_CHARS:,} chars)" if cut else "")
 
     sympy_str = None
     if mode == "Math" and expr.strip() and not no_hint:
@@ -785,8 +712,6 @@ if busy:
         if perr is None:
             sympy_str = str(res)
             user_msg += f"\n[SymPy result: {res}]"
-        else:
-            user_msg += f"\n[SymPy parsing error: {perr}]"
 
     history = []
     if remember or force_ctx:
@@ -819,13 +744,9 @@ if busy:
             new_msg.update(stopped=True, meta=f"⏹ Stopped · {n_tok} tokens")
         elif not err and n_tok >= max_tokens - 2:
             new_msg["truncated"] = True
-        if err:
-            new_msg["meta"] += f" · ⚠️ interrupted: {err['e']}"
         if sympy_str and not was_stopped:
             new_msg["sympy"] = sympy_str
             new_msg["check"] = sympy_check(sympy_str, buf)
     ss["messages"].append(new_msg)
     save_chat()
     st.rerun()
-
-st.caption("AI-generated answers can contain mistakes. Check important facts.")
