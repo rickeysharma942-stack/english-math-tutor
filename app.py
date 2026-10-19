@@ -1,5 +1,6 @@
 import os
 import re
+import base64
 import json
 import time
 import threading
@@ -62,15 +63,27 @@ MODES = {
     },
 }
 
-st.set_page_config(page_title="English + Math Tutor", page_icon="🧠", layout="centered")
+# ---------------- logo (logo.png must sit next to app.py) ----------------
+LOGO_PATH = Path(__file__).parent / "logo.png"
+if LOGO_PATH.exists():
+    _b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+    LOGO_IMG = f'<img class="logo" src="data:image/png;base64,{_b64}" alt="">'
+    AVATAR = PAGE_ICON = str(LOGO_PATH)
+else:                                                   # fallback if the file is missing
+    LOGO_IMG, AVATAR, PAGE_ICON = "✨", "✨", "✨"
+
+st.set_page_config(page_title="English + Math Tutor", page_icon=PAGE_ICON, layout="centered")
 
 st.markdown("""
 <style>
 .block-container {max-width: 820px; padding-top: 1.4rem;}
 .hero {padding: .9rem 1.2rem; border-radius: 16px; margin-bottom: .8rem;
-       background: linear-gradient(135deg, rgba(99,102,241,.20), rgba(236,72,153,.14));
+       background: linear-gradient(135deg, rgba(41,221,245,.22), rgba(41,245,183,.16));
        border: 1px solid rgba(128,128,128,.4);}
 .hero h1 {margin: 0; font-size: 1.55rem; line-height: 1.2;}
+.logo {height: 1.9rem; width: auto; vertical-align: -0.45rem; margin-right: .55rem;}
+.side-title {font-size: 1.45rem; font-weight: 700; margin-bottom: .4rem;}
+.side-title .logo {height: 1.6rem; vertical-align: -0.3rem;}
 .hero p {margin: .2rem 0 0 0; opacity: .9; font-size: .9rem;}
 .pill {display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .78rem;
        border: 1px solid rgba(128,128,128,.55);}
@@ -81,7 +94,7 @@ section[data-testid="stSidebar"] div.stButton > button p {white-space: nowrap; o
 .hist-label {font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; opacity: .8; margin: .8rem 0 .2rem .2rem;}
 /* accessibility: strong visible keyboard focus, screen-reader-only text, reduced motion */
 button:focus-visible, textarea:focus-visible, input:focus-visible, [role="radio"]:focus-visible, [role="tab"]:focus-visible
-  {outline: 3px solid #6366f1 !important; outline-offset: 2px !important;}
+  {outline: 3px solid #0891b2 !important; outline-offset: 2px !important;}
 .sr-only {position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;}
 @media (prefers-reduced-motion: reduce) {* {animation: none !important; transition: none !important;}}
 .skeleton {height: 3.4rem; border-radius: 10px;
@@ -523,7 +536,7 @@ ss["gen"] = None
 
 # ---------------- sidebar ----------------
 with st.sidebar:
-    st.markdown("## 🧠 Tutor")
+    st.markdown(f'<div class="side-title">{LOGO_IMG} Tutor</div>', unsafe_allow_html=True)
     st.button("✏️  New chat", on_click=new_chat, use_container_width=True)
 
     chats = list_chats()
@@ -573,8 +586,9 @@ with st.sidebar:
 
 # ---------------- main area ----------------
 st.markdown(
-    '<div class="hero"><h1>🧠 English + Math Tutor</h1>'
-    '<p>Qwen3-8B with three LoRA adapters: detailed answers for English, math and general questions.</p></div>',
+    f'<div class="hero"><h1>{LOGO_IMG}English + Math Tutor</h1>'
+    '<p>Three LoRA adapters, three superpowers: sharper English, clearer math, '
+    'and detailed answers to anything you ask.</p></div>',
     unsafe_allow_html=True)
 st.markdown(f'<div class="sr-only" role="status" aria-live="polite">{ss.pop("announce", "")}</div>',
             unsafe_allow_html=True)
@@ -688,7 +702,7 @@ msgs = ss["messages"]
 for i, m in enumerate(msgs):
     if cont_run and i == len(msgs) - 1:
         continue                                        # redrawn live below while it continues
-    with st.chat_message(m["role"], avatar="🧑‍🎓" if m["role"] == "user" else "🧠"):
+    with st.chat_message(m["role"], avatar="🧑‍🎓" if m["role"] == "user" else AVATAR):
         if m["role"] == "assistant":
             st.markdown(f'<span class="pill">{m["mode"]}</span>', unsafe_allow_html=True)
         st.markdown(m["content"])
@@ -710,7 +724,7 @@ for i, m in enumerate(msgs):
 
 if remember and msgs and not busy:
     _, info = build_context(msgs, ctx_budget)
-    line = f"🧠 Context for your next question: {info['included']} of {info['total']} earlier turns · " \
+    line = f"📚 Context for your next question: {info['included']} of {info['total']} earlier turns · " \
            f"{info['used']:,} / {info['budget']:,} tokens"
     if info["pinned"]:
         line += f" · 📌 {info['pinned']} pinned"
@@ -735,7 +749,7 @@ if busy:
 
     if cont_run:                                       # ---- continue a cut-off answer
         base, user_m = ss["messages"][-1], ss["messages"][-2]
-        with st.chat_message("assistant", avatar="🧠"):
+        with st.chat_message("assistant", avatar=AVATAR):
             st.markdown(f'<span class="pill">{base["mode"]}</span>', unsafe_allow_html=True)
             slot, stop_slot = st.empty(), st.empty()
             slot.markdown(base["content"] + " ▌")
@@ -794,7 +808,7 @@ if busy:
     with st.chat_message("user", avatar="🧑‍🎓"):
         st.markdown(shown_prompt)
 
-    with st.chat_message("assistant", avatar="🧠"):
+    with st.chat_message("assistant", avatar=AVATAR):
         st.markdown(f'<span class="pill">{mode}</span>', unsafe_allow_html=True)
         slot, stop_slot = st.empty(), st.empty()
         slot.markdown(SKELETON, unsafe_allow_html=True)          # skeleton until the first token arrives
