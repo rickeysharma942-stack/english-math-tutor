@@ -17,7 +17,7 @@ from peft import PeftModel
 
 # ---------------- EDIT THESE ----------------
 GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
-RELEASE_TAG = "model-v2"
+RELEASE_TAG = "v1.0"                                       # release tag that holds the adapter files
 
 # File names exactly as uploaded to the GitHub Release
 ASSETS = {
@@ -65,31 +65,19 @@ st.set_page_config(page_title="English + Math Tutor", page_icon="🧠", layout="
 
 st.markdown("""
 <style>
-.block-container {max-width: 900px; padding: 1.5rem 1.25rem 6rem;}
-[data-testid="stAppViewContainer"] {scroll-behavior: smooth;}
-.hero {padding: 1.15rem 1.35rem; border-radius: 20px; margin-bottom: 1rem;
-       background: linear-gradient(135deg, rgba(99,102,241,.19), rgba(236,72,153,.10) 58%, rgba(14,165,233,.10));
-       border: 1px solid rgba(128,128,128,.28); box-shadow: 0 8px 26px rgba(0,0,0,.045);}
-.hero h1 {margin: 0; font-size: clamp(1.45rem, 3vw, 1.9rem); line-height: 1.2; letter-spacing: -.025em;}
-.hero p {margin: .45rem 0 0; opacity: .82; font-size: .94rem; line-height: 1.5;}
-.pill {display: inline-block; padding: .18rem .65rem; border-radius: 999px; font-size: .76rem;
-       border: 1px solid rgba(128,128,128,.38); background: rgba(128,128,128,.07); margin-bottom: .3rem;}
-div[data-testid="stChatMessage"] {border: 1px solid rgba(128,128,128,.13); border-radius: 16px;
-       padding: .85rem 1rem; margin: .65rem 0; transition: border-color .18s ease;}
-div.stButton > button, div[data-testid="stDownloadButton"] button {border-radius: 12px; min-height: 2.55rem;
-       transition: transform .15s ease, border-color .15s ease, background .15s ease;}
-div.stButton > button:hover {transform: translateY(-1px);}
-div[data-testid="stChatInput"] {border-radius: 18px;}
-div[data-testid="stChatInput"] textarea {line-height: 1.5;}
-div[data-testid="stExpander"] {border-radius: 14px; overflow: hidden;}
+.block-container {max-width: 820px; padding-top: 1.4rem;}
+.hero {padding: .9rem 1.2rem; border-radius: 16px; margin-bottom: .8rem;
+       background: linear-gradient(135deg, rgba(99,102,241,.20), rgba(236,72,153,.14));
+       border: 1px solid rgba(128,128,128,.4);}
+.hero h1 {margin: 0; font-size: 1.55rem; line-height: 1.2;}
+.hero p {margin: .2rem 0 0 0; opacity: .9; font-size: .9rem;}
+.pill {display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .78rem;
+       border: 1px solid rgba(128,128,128,.55);}
+div[data-testid="stChatMessage"] {border-radius: 14px;}
+div.stButton > button {border-radius: 12px;}
 section[data-testid="stSidebar"] div.stButton > button {justify-content: flex-start; text-align: left; padding: .35rem .7rem;}
 section[data-testid="stSidebar"] div.stButton > button p {white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
 .hist-label {font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; opacity: .8; margin: .8rem 0 .2rem .2rem;}
-@media (max-width: 640px) {
-  .block-container {padding: 1rem .75rem 5.5rem;}
-  .hero {padding: 1rem; border-radius: 16px;}
-  div[data-testid="stChatMessage"] {padding: .65rem .75rem; border-radius: 13px;}
-}
 /* accessibility: strong visible keyboard focus, screen-reader-only text, reduced motion */
 button:focus-visible, textarea:focus-visible, input:focus-visible, [role="radio"]:focus-visible, [role="tab"]:focus-visible
   {outline: 3px solid #6366f1 !important; outline-offset: 2px !important;}
@@ -153,11 +141,9 @@ def load_model():
         load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
     )
-    tok = AutoTokenizer.from_pretrained(BASE_MODEL, use_fast=True)
-    if tok.pad_token_id is None:
-        tok.pad_token = tok.eos_token
+    tok = AutoTokenizer.from_pretrained(BASE_MODEL)
     base = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, quantization_config=bnb, device_map={"": 0}, torch_dtype=torch.float16
+        BASE_MODEL, quantization_config=bnb, device_map={"": 0}, dtype=torch.float16
     )
     mdl = PeftModel.from_pretrained(base, str(ADAPTER_DIR / "english_adapter"), adapter_name="english_adapter")
     mdl.load_adapter(str(ADAPTER_DIR / "math_adapter"), adapter_name="math_adapter")
@@ -170,11 +156,7 @@ try:
     tokenizer, model, gen_lock, stop_event = load_model()
 except requests.HTTPError as e:
     st.error(f"Could not download adapter files from the GitHub Release: {e}. "
-             "Check GITHUB_REPO, ADAPTER_RELEASE_TAG and the exact release asset names; the repository/release must be public.")
-    st.stop()
-except Exception as e:
-    st.error(f"Model setup failed: {type(e).__name__}: {e}")
-    st.info("Check BASE_MODEL, GPU availability, package versions, and that each adapter matches the base model.")
+             "Check GITHUB_REPO, RELEASE_TAG and the asset names, and make sure the repo is public.")
     st.stop()
 
 
@@ -218,20 +200,14 @@ class StoppableStreamer(TextIteratorStreamer):
 
 
 def stream_reply(messages, adapter, temperature, max_new_tokens, err, raw_prompt=None):
-    if raw_prompt is not None:
-        text = raw_prompt
-    else:
-        try:
-            text = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-        except TypeError:
-            text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    text = raw_prompt if raw_prompt is not None else tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
     inputs = tokenizer(text, return_tensors="pt").to("cuda")
     streamer = StoppableStreamer(tokenizer, stop_event, skip_prompt=True, skip_special_tokens=True, timeout=180)
 
-    stop_event.clear()
     def work():
         with gen_lock:
+            stop_event.clear()
             try:
                 model.set_adapter(adapter)
                 with torch.no_grad():
@@ -291,8 +267,6 @@ def columns(spec, **kw):
 
 
 def count_tokens(t: str) -> int:
-    if not t:
-        return 0
     return len(tokenizer(t, add_special_tokens=False)["input_ids"])
 
 
