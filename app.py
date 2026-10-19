@@ -167,19 +167,16 @@ except requests.HTTPError as e:
 
 # ---------------- Universal 30-Format File Parser ----------------
 def extract_text_from_file(uploaded_file) -> str:
-    """Robust universal parser supporting all 30 user-specified professional & code formats."""
     filename = uploaded_file.name.lower()
     ext = Path(filename).suffix
     content_bytes = uploaded_file.read()
 
-    # 1. Plain text / code formats (.txt, .md, .py, .csv, .html, .htm, .xml, .tex, .json, .svg, .log, etc.)
     if ext in [".txt", ".md", ".py", ".csv", ".html", ".htm", ".xml", ".tex", ".json", ".log", ".ini", ".cfg", ".yaml", ".yml", ".js", ".ts", ".css"]:
         try:
             return content_bytes.decode("utf-8", errors="replace")
         except Exception:
             return str(content_bytes)
 
-    # 2. Jupyter Notebooks (.ipynb)
     if ext == ".ipynb":
         try:
             nb = json.loads(content_bytes.decode("utf-8", errors="replace"))
@@ -193,7 +190,6 @@ def extract_text_from_file(uploaded_file) -> str:
         except Exception as e:
             return f"[Error parsing Jupyter Notebook: {e}]"
 
-    # 3. Zip archives or OpenDocument/XML-based Office docs (.docx, .xlsx, .pptx, .odt, .ods, .odp, .epub, .zip)
     if ext in [".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".zip"]:
         try:
             extracted_texts = []
@@ -202,7 +198,6 @@ def extract_text_from_file(uploaded_file) -> str:
                     if any(name.endswith(sub) for sub in [".xml", ".txt", ".html", ".xhtml", ".md", ".json"]):
                         with z.open(name) as f:
                             text_chunk = f.read().decode("utf-8", errors="replace")
-                            # Simple tag strip for XML/HTML files inside archives
                             clean_text = re.sub(r'<[^>]+>', ' ', text_chunk)
                             extracted_texts.append(f"--- File inside archive: {name} ---\n{clean_text}")
             if extracted_texts:
@@ -210,10 +205,8 @@ def extract_text_from_file(uploaded_file) -> str:
         except Exception as e:
             return f"[Error parsing archive/document structure: {e}]"
 
-    # 4. PDF fallback extraction (basic text search / fallback)
     if ext == ".pdf":
         try:
-            # Look for raw text strings inside stream objects
             text_tokens = re.findall(r'\((.*?)\)\s*Tj', content_bytes.decode("latin1", errors="replace"))
             if text_tokens:
                 return " ".join(text_tokens)
@@ -221,7 +214,6 @@ def extract_text_from_file(uploaded_file) -> str:
         except Exception as e:
             return f"[PDF parsing fallback error: {e}]"
 
-    # 5. Generic binary/legacy or fallback parser
     try:
         return content_bytes.decode("utf-8", errors="ignore")
     except Exception:
@@ -337,7 +329,7 @@ FOLLOWUPS = {
 FILE_DEFAULTS = {"English": "Proofread this attached document/file and explain each correction in detail:",
                  "Math": "Analyze and solve the problems in this attached file step by step:",
                  "General": "Summarize and extract key insights from this attached file:"}
-MAX_FILE_CHARS = 12000  # Increased limit for professional multi-format documents
+MAX_FILE_CHARS = 12000
 
 def train_prompt(user: str) -> str:
     return f"<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
@@ -619,7 +611,6 @@ if mode == "Math":
                 st.latex(sp.latex(res))
                 st.caption("SymPy verification check active.")
 
-# Expanded file type support covering all 30 requested professional and code formats
 SUPPORTED_FILE_TYPES = [
     "pdf", "docx", "xlsx", "pptx", "txt", "csv", "html", "htm", "doc", "xls",
     "ppt", "rtf", "odt", "ods", "odp", "md", "json", "xml", "tex", "epub",
