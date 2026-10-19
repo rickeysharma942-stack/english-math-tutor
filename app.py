@@ -17,7 +17,7 @@ from peft import PeftModel
 
 # ---------------- EDIT THESE ----------------
 GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
-RELEASE_TAG = os.environ.get("ADAPTER_RELEASE_TAG", "model-v2")  # override with ADAPTER_RELEASE_TAG
+RELEASE_TAG = "chatbot"  # override with ADAPTER_RELEASE_TAG
 
 # File names exactly as uploaded to the GitHub Release
 ASSETS = {
