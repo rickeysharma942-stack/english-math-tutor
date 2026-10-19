@@ -1,111 +1,167 @@
 import os
-import re
-import base64
-import json
-import time
-import threading
-import zipfile
 import io
-import html
-from datetime import datetime, date, timedelta
+import re
+import json
+import base64
+import zipfile
+import threading
+import subprocess
+import tempfile
 from pathlib import Path
+from datetime import datetime
 
 import requests
 import torch
 import streamlit as st
 import sympy as sp
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations, convert_xor
-from transformers import (AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig,
-                          TextIteratorStreamer)
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    convert_xor,
+)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    TextIteratorStreamer,
+)
 from peft import PeftModel
 
-# ---------------- EDIT THESE ----------------
-GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"   # repo that has the release
-RELEASE_TAG = "chatbot"                                    # the TAG of the release
+# ----------------------------- CONFIG -----------------------------
 
-# File names exactly as they appear in the GitHub Release:
+GITHUB_REPO = "rickeysharma942-stack/english-math-tutor"
+RELEASE_TAG = "chatbot"
+
 ASSETS = {
-    name: {
-        "adapter_config.json": f"{short}_adapter_config.json",
-        "adapter_model.safetensors": f"{short}_adapter_model.safetensors",
-    }
-    for name, short in [("english_adapter", "english"), ("math_adapter", "math"), ("general_adapter", "general")]
+    "english_adapter": {
+        "adapter_config.json": "english_adapter_config.json",
+        "adapter_model.safetensors": "english_adapter_model.safetensors",
+    },
+    "math_adapter": {
+        "adapter_config.json": "math_adapter_config.json",
+        "adapter_model.safetensors": "math_adapter_model.safetensors",
+    },
+    "general_adapter": {
+        "adapter_config.json": "general_adapter_config.json",
+        "adapter_model.safetensors": "general_adapter_model.safetensors",
+    },
 }
-# --------------------------------------------
 
 ADAPTER_DIR = Path("adapters") / RELEASE_TAG
 CHAT_DIR = Path(os.environ.get("CHAT_DIR", "chats"))
 CHAT_DIR.mkdir(parents=True, exist_ok=True)
 
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+MAX_FILE_CHARS = 16000
+MAX_HISTORY_CHARS = 24000
+
 MODES = {
     "General": {
-        "adapter": "general_adapter", "icon": "💬",
-        "blurb": "Ask anything. Long, detailed answers.",
-        "placeholder": "Ask me anything or drop files...",
-        "examples": ["What are some good habits for daily productivity?",
-                     "Explain how the internet works to a beginner.",
-                     "Give me a 7-day plan to learn public speaking."],
+        "icon": "💬",
+        "adapter": "general_adapter",
+        "blurb": "Ask anything, summarize documents, brainstorm, or analyze files.",
+        "placeholder": "Ask anything, or upload PDFs, Word files, spreadsheets, code...",
+        "examples": [
+            "Summarize this document in simple English.",
+            "Explain how HTTPS works to a beginner.",
+            "Create a 7-day study plan for Python cybersecurity.",
+        ],
+        "file_prompt": "Summarize and extract the key insights from this attached file:",
     },
     "English": {
-        "adapter": "english_adapter", "icon": "✍️",
-        "blurb": "Grammar fixes with a detailed explanation of every rule.",
-        "placeholder": "Paste a sentence to correct or upload document...",
-        "examples": ["Correct the grammar and explain in detail: He don't know nothing about it.",
-                     "Correct the grammar and explain in detail: Me and her goes to school yesterday.",
-                     "Explain the difference between 'affect' and 'effect'."],
+        "icon": "✍️",
+        "adapter": "english_adapter",
+        "blurb": "Grammar correction, writing improvement, and detailed explanations.",
+        "placeholder": "Paste text to correct, or upload a document...",
+        "examples": [
+            "Correct the grammar and explain every correction: He don't know nothing about it.",
+            "Improve this email professionally: Me and her goes to school yesterday.",
+            "Explain the difference between affect and effect.",
+        ],
+        "file_prompt": "Proofread this attached document. Correct grammar, clarity, tone, and explain each major correction:",
     },
     "Math": {
-        "adapter": "math_adapter", "icon": "🧮",
-        "blurb": "Step-by-step solutions. SymPy checks the algebra for you.",
-        "placeholder": "Ask a math question or upload dataset/code...",
-        "examples": [("Explain step by step the derivative of: diff(x**3 + 5*x, x)", "diff(x**3 + 5*x, x)"),
-                     ("Explain step by step the integral of: integrate(x**2 + 3*x, x)", "integrate(x**2 + 3*x, x)"),
-                     ("Solve step by step: a train travels 180 km in 2.5 hours. What is its average speed?", "")],
+        "icon": "🧮",
+        "adapter": "math_adapter",
+        "blurb": "Step-by-step math help with optional SymPy verification.",
+        "placeholder": "Ask a math question, or upload a worksheet/dataset...",
+        "examples": [
+            "Explain step by step: differentiate x^3 + 5x",
+            "Solve step by step: 2x + 7 = 19",
+            "A train travels 180 km in 2.5 hours. Find its average speed.",
+        ],
+        "file_prompt": "Analyze the problems in this attached file and solve them step by step:",
     },
 }
 
-# ---------------- logo configuration ----------------
+# ----------------------------- UI SETUP -----------------------------
+
 LOGO_PATH = Path(__file__).parent / "logo.png"
+
 if LOGO_PATH.exists():
-    _b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
-    LOGO_IMG = f'<img class="logo" src="data:image/png;base64,{_b64}" alt="">'
-    AVATAR = PAGE_ICON = str(LOGO_PATH)
+    logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+    PAGE_ICON = str(LOGO_PATH)
+    LOGO_HTML = f"""
+    <div class="brand">
+      <img src="data:image/png;base64,{logo_b64}" class="logo">
+      <div>
+        <div class="title">Tutor Studio</div>
+        <div class="subtitle">English · Math · General AI workspace</div>
+      </div>
+    </div>
+    """
 else:
-    LOGO_IMG, AVATAR, PAGE_ICON = "✨", "✨", "✨"
+    PAGE_ICON = "✨"
+    LOGO_HTML = """
+    <div class="brand">
+      <div class="logo emoji">✨</div>
+      <div>
+        <div class="title">Tutor Studio</div>
+        <div class="subtitle">English · Math · General AI workspace</div>
+      </div>
+    </div>
+    """
 
-st.set_page_config(page_title="English + Math Tutor Studio", page_icon=PAGE_ICON, layout="centered")
+st.set_page_config(
+    page_title="English + Math Tutor Studio",
+    page_icon=PAGE_ICON,
+    layout="wide",
+)
 
-# ---------------- Upgraded Modern UI & Dashboard Styling ----------------
-st.markdown("""
-<style>
-.block-container {max-width: 900px; padding-top: 1.5rem; padding-bottom: 4rem;}
-.hero {padding: 1.4rem 1.8rem; border-radius: 20px; margin-bottom: 1.2rem;
-       background: linear-gradient(135deg, rgba(14,165,233,0.15), rgba(16,185,129,0.12));
-       border: 1px solid rgba(128,128,128,0.2);
-       box-shadow: 0 8px 30px rgba(0,0,0,0.04);}
-.hero h1 {margin: 0; font-size: 1.8rem; line-height: 1.25; font-weight: 800; letter-spacing: -0.02em;}
-.logo {height: 2.1rem; width: auto; vertical-align: -0.4rem; margin-right: 0.6rem;}
-.side-title {font-size: 1.35rem; font-weight: 700; margin-bottom: 0.6rem; display: flex; align-items: center;}
-.side-title .logo {height: 1.5rem; vertical-align: -0.2rem;}
-.hero p {margin: 0.5rem 0 0 0; opacity: 0.85; font-size: 0.96rem;}
-.pill {display: inline-block; padding: 0.15rem 0.7rem; border-radius: 999px; font-size: 0.74rem;
-       font-weight: 600; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.3); margin-bottom: 0.5rem;}
-div[data-testid="stChatMessage"] {border-radius: 16px; padding: 1.1rem; margin-bottom: 1rem; border: 1px solid rgba(128,128,128,0.18); box-shadow: 0 2px 12px rgba(0,0,0,0.02);}
-div.stButton > button {border-radius: 12px; font-weight: 600; transition: all 0.2s ease;}
-section[data-testid="stSidebar"] div.stButton > button {justify-content: flex-start; text-align: left; padding: 0.45rem 0.8rem;}
-section[data-testid="stSidebar"] div.stButton > button p {white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
-.hist-label {font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; margin: 1.2rem 0 0.3rem 0.3rem; font-weight: 700;}
-button:focus-visible, textarea:focus-visible, input:focus-visible {outline: 3px solid #0284c7 !important; outline-offset: 2px !important;}
-.sr-only {position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;}
-.skeleton {height: 4rem; border-radius: 14px;
-  background: linear-gradient(90deg, rgba(128,128,128,0.1) 25%, rgba(128,128,128,0.25) 37%, rgba(128,128,128,0.1) 63%);
-  background-size: 400% 100%; animation: shimmer 1.4s ease infinite;}
-@keyframes shimmer {0% {background-position: 100% 0} 100% {background-position: 0 0}}
-.file-badge {display: inline-flex; align-items: center; background: rgba(14,165,233,0.12); border: 1px solid rgba(14,165,233,0.3); padding: 4px 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 500; margin-bottom: 8px;}
-</style>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+      .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1250px; }
+      .brand { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+      .brand img, .brand .emoji { width:54px; height:54px; border-radius:16px; object-fit:cover; }
+      .brand .emoji { display:flex; align-items:center; justify-content:center; font-size:30px;
+                      background:linear-gradient(135deg,#6366f1,#22d3ee); color:white; }
+      .brand .title { font-size:1.55rem; font-weight:800; line-height:1.1; }
+      .brand .subtitle { color:#64748b; font-size:.88rem; }
+      .mode-card { border:1px solid rgba(148,163,184,.25); border-radius:18px; padding:16px;
+                   background:rgba(148,163,184,.07); height:100%; }
+      .mode-title { font-weight:750; font-size:1.05rem; margin-bottom:4px; }
+      .mode-blurb { color:#94a3b8; font-size:.86rem; }
+      .file-chip { display:inline-block; background:rgba(99,102,241,.15); color:#a5b4fc;
+                   border:1px solid rgba(99,102,241,.35); padding:3px 10px; border-radius:999px;
+                   font-size:.76rem; margin:3px 4px 3px 0; }
+      .chat-user { background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(34,211,238,.12));
+                   border:1px solid rgba(99,102,241,.28); border-radius:16px; padding:14px 16px; }
+      .chat-bot { background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.20);
+                  border-radius:16px; padding:14px 16px; }
+      .small-muted { color:#94a3b8; font-size:.82rem; }
+      div[data-testid="stFileUploaderDropzone"] { border-radius:16px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# ---------------- model loading ----------------
+st.markdown(LOGO_HTML, unsafe_allow_html=True)
+
+# ----------------------------- MODEL -----------------------------
+
 def get_base_model_id():
     value = os.environ.get("BASE_MODEL")
     if not value:
@@ -115,706 +171,842 @@ def get_base_model_id():
             value = None
     return value
 
+
 BASE_MODEL = get_base_model_id()
+
 if not BASE_MODEL:
-    st.error("BASE_MODEL is not set. Set it as an environment variable or a Streamlit secret.")
+    st.error("BASE_MODEL is not set. Add it as an environment variable or Streamlit secret.")
     st.stop()
 
 if not torch.cuda.is_available():
-    st.error("No GPU found. This model needs an NVIDIA GPU (for example a Colab or Kaggle T4).")
+    st.error("No CUDA GPU detected. This app requires an NVIDIA GPU, such as a Kaggle/Colab T4.")
     st.stop()
+
 
 def download_file(url: str, dest: Path):
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
+
     with requests.get(url, stream=True, timeout=60, allow_redirects=True) as r:
         r.raise_for_status()
         with open(tmp, "wb") as f:
             for chunk in r.iter_content(chunk_size=1024 * 1024):
-                f.write(chunk)
+                if chunk:
+                    f.write(chunk)
+
     tmp.replace(dest)
+
 
 def ensure_adapters():
     base_url = f"https://github.com/{GITHUB_REPO}/releases/download/{RELEASE_TAG}"
+
     for adapter_name, files in ASSETS.items():
         for local_name, asset_name in files.items():
             dest = ADAPTER_DIR / adapter_name / local_name
             if not dest.exists():
                 download_file(f"{base_url}/{asset_name}", dest)
 
-@st.cache_resource(show_spinner="Loading model adapters... (first run downloads files)")
+
+@st.cache_resource(show_spinner="Loading model and adapters...")
 def load_model():
     ensure_adapters()
+
     bnb = BitsAndBytesConfig(
-        load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
     )
-    tok = AutoTokenizer.from_pretrained(BASE_MODEL)
+
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+
     base = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, quantization_config=bnb, device_map={"": 0}, torch_dtype=torch.float16
+        BASE_MODEL,
+        quantization_config=bnb,
+        device_map={"": 0},
+        torch_dtype=torch.float16,
     )
-    mdl = PeftModel.from_pretrained(base, str(ADAPTER_DIR / "english_adapter"), adapter_name="english_adapter")
-    mdl.load_adapter(str(ADAPTER_DIR / "math_adapter"), adapter_name="math_adapter")
-    mdl.load_adapter(str(ADAPTER_DIR / "general_adapter"), adapter_name="general_adapter")
-    mdl.eval()
-    return tok, mdl, threading.Lock(), threading.Event()
+
+    model = PeftModel.from_pretrained(
+        base,
+        str(ADAPTER_DIR / "english_adapter"),
+        adapter_name="english_adapter",
+    )
+    model.load_adapter(str(ADAPTER_DIR / "math_adapter"), adapter_name="math_adapter")
+    model.load_adapter(str(ADAPTER_DIR / "general_adapter"), adapter_name="general_adapter")
+    model.eval()
+
+    return tokenizer, model, threading.Lock(), threading.Event()
+
 
 try:
-    tokenizer, model, gen_lock, stop_event = load_model()
+    tokenizer, model, generation_lock, stop_event = load_model()
 except requests.HTTPError as e:
-    st.error(f"Could not download adapter files from the GitHub Release: {e}. Check GITHUB_REPO, RELEASE_TAG and asset names.")
+    st.error(f"Could not download adapter files from GitHub Releases: {e}")
+    st.stop()
+except Exception as e:
+    st.error(f"Model loading failed: `{e}`")
     st.stop()
 
-# ---------------- Universal 30-Format File Parser ----------------
-def extract_text_from_file(uploaded_file) -> str:
-    filename = uploaded_file.name.lower()
-    ext = Path(filename).suffix
-    content_bytes = uploaded_file.read()
+# ----------------------------- FILE PARSING -----------------------------
 
-    if ext in [".txt", ".md", ".py", ".csv", ".html", ".htm", ".xml", ".tex", ".json", ".log", ".ini", ".cfg", ".yaml", ".yml", ".js", ".ts", ".css"]:
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".py", ".js", ".ts", ".jsx", ".tsx", ".java",
+    ".c", ".cpp", ".h", ".hpp", ".cs", ".go", ".rs", ".rb", ".php", ".sh",
+    ".bash", ".zsh", ".sql", ".html", ".htm", ".css", ".scss", ".xml", ".json",
+    ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".log", ".csv", ".tsv",
+    ".tex", ".latex", ".r", ".m", ".ipynb", ".env", ".gitignore", ".dockerfile",
+}
+
+ZIP_LIKE_EXTENSIONS = {
+    ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".zip",
+    ".pages", ".numbers", ".key",
+}
+
+LIBREOFFICE_EXTENSIONS = {
+    ".doc", ".xls", ".ppt", ".rtf", ".ps", ".wpd", ".pub", ".xps",
+    ".mht", ".mhtml", ".indd", ".fb2",
+}
+
+
+def clean_xml_text(raw: str) -> str:
+    raw = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", raw, flags=re.I | re.S)
+    raw = re.sub(r"<[^>]+>", " ", raw)
+    raw = raw.replace("&nbsp;", " ").replace("&amp;", "&")
+    raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def extract_text_from_zip_bytes(data: bytes, original_name: str) -> str:
+    chunks = []
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            useful = []
+
+            for name in z.namelist():
+                lower = name.lower()
+
+                if lower.endswith("__MACOSX") or name.startswith("__MACOSX/"):
+                    continue
+
+                if lower.endswith((".xml", ".txt", ".html", ".htm", ".xhtml", ".md", ".json", ".csv")):
+                    useful.append(name)
+
+            # Prioritize common document content files.
+            priority = [
+                "word/document.xml",
+                "xl/sharedstrings.xml",
+                "xl/worksheets/",
+                "ppt/slides/",
+                "content.xml",
+                "content.opf",
+                "index_split",
+            ]
+
+            useful.sort(
+                key=lambda n: (
+                    0 if any(p in n.lower() for p in priority) else 1,
+                    n.lower(),
+                )
+            )
+
+            for name in useful[:80]:
+                try:
+                    with z.open(name) as f:
+                        raw = f.read(2_000_000).decode("utf-8", errors="replace")
+
+                    if name.lower().endswith(".json"):
+                        try:
+                            parsed = json.loads(raw)
+                            text = json.dumps(parsed, indent=2, ensure_ascii=False)
+                        except Exception:
+                            text = raw
+                    else:
+                        text = clean_xml_text(raw)
+
+                    if text:
+                        chunks.append(f"--- {name} ---\n{text[:6000]}")
+
+                except Exception:
+                    continue
+
+    except Exception as e:
+        return f"[Could not read archive structure in {original_name}: {e}]"
+
+    if not chunks:
+        return f"[No readable text found inside {original_name}.]"
+
+    return "\n\n".join(chunks)
+
+
+def extract_pdf_with_pypdf(data: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return ""
+
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        pages = []
+
+        for i, page in enumerate(reader.pages):
+            text = page.extract_text() or ""
+            if text.strip():
+                pages.append(f"--- Page {i + 1} ---\n{text.strip()}")
+
+        return "\n\n".join(pages)
+
+    except Exception as e:
+        return f"[PDF extraction error: {e}]"
+
+
+def convert_with_libreoffice(data: bytes, original_name: str) -> str:
+    suffix = Path(original_name).suffix or ".bin"
+
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / f"input{suffix}"
+            src.write_bytes(data)
+
+            result = subprocess.run(
+                [
+                    "libreoffice",
+                    "--headless",
+                    "--convert-to",
+                    "txt:Text",
+                    "--outdir",
+                    td,
+                    str(src),
+                ],
+                capture_output=True,
+                timeout=90,
+            )
+
+            out = Path(td) / "input.txt"
+
+            if out.exists():
+                return out.read_text(encoding="utf-8", errors="replace")
+
+            return f"[LibreOffice conversion failed for {original_name}.]{result.stderr.decode(errors='replace')[:500]}"
+
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        return f"[LibreOffice conversion error for {original_name}: {e}]"
+
+
+def extract_docx(data: bytes) -> str:
+    try:
+        from docx import Document
+
+        doc = Document(io.BytesIO(data))
+        parts = []
+
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text)
+
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+
+        return "\n".join(parts)
+
+    except Exception as e:
+        return f"[DOCX extraction error: {e}]"
+
+
+def extract_xlsx(data: bytes) -> str:
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        parts = []
+
+        for sheet in wb.worksheets:
+            parts.append(f"--- Sheet: {sheet.title} ---")
+
+            for row in sheet.iter_rows(values_only=True):
+                values = ["" if v is None else str(v) for v in row]
+
+                if any(v.strip() for v in values):
+                    parts.append(" | ".join(values))
+
+        return "\n".join(parts)
+
+    except Exception as e:
+        return f"[XLSX extraction error: {e}]"
+
+
+def extract_pptx(data: bytes) -> str:
+    try:
+        from pptx import Presentation
+
+        prs = Presentation(io.BytesIO(data))
+        parts = []
+
+        for i, slide in enumerate(prs.slides, start=1):
+            parts.append(f"--- Slide {i} ---")
+
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    parts.append(shape.text.strip())
+
+        return "\n".join(parts)
+
+    except Exception as e:
+        return f"[PPTX extraction error: {e}]"
+
+
+def extract_text_from_upload(uploaded_file) -> str:
+    name = uploaded_file.name
+    ext = Path(name).suffix.lower()
+    data = uploaded_file.getvalue()
+
+    if ext in TEXT_EXTENSIONS:
         try:
-            return content_bytes.decode("utf-8", errors="replace")
+            return data.decode("utf-8", errors="replace")
         except Exception:
-            return str(content_bytes)
-
-    if ext == ".ipynb":
-        try:
-            nb = json.loads(content_bytes.decode("utf-8", errors="replace"))
-            cells_text = []
-            for cell in nb.get("cells", []):
-                source = cell.get("source", "")
-                if isinstance(source, list):
-                    source = "".join(source)
-                cells_text.append(f"[{cell.get('cell_type', 'code')}]\n{source}")
-            return "\n\n".join(cells_text)
-        except Exception as e:
-            return f"[Error parsing Jupyter Notebook: {e}]"
-
-    if ext in [".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".zip"]:
-        try:
-            extracted_texts = []
-            with zipfile.ZipFile(io.BytesIO(content_bytes)) as z:
-                for name in z.namelist():
-                    if any(name.endswith(sub) for sub in [".xml", ".txt", ".html", ".xhtml", ".md", ".json"]):
-                        with z.open(name) as f:
-                            text_chunk = f.read().decode("utf-8", errors="replace")
-                            clean_text = re.sub(r'<[^>]+>', ' ', text_chunk)
-                            extracted_texts.append(f"--- File inside archive: {name} ---\n{clean_text}")
-            if extracted_texts:
-                return "\n\n".join(extracted_texts)
-        except Exception as e:
-            return f"[Error parsing archive/document structure: {e}]"
+            return data.decode("latin-1", errors="replace")
 
     if ext == ".pdf":
-        try:
-            text_tokens = re.findall(r'\((.*?)\)\s*Tj', content_bytes.decode("latin1", errors="replace"))
-            if text_tokens:
-                return " ".join(text_tokens)
-            return content_bytes.decode("latin1", errors="replace")[:10000]
-        except Exception as e:
-            return f"[PDF parsing fallback error: {e}]"
+        text = extract_pdf_with_pypdf(data)
+
+        if text and not text.startswith("[PDF extraction error"):
+            return text
+
+        fallback = extract_text_from_zip_bytes(data, name)
+
+        if fallback and not fallback.startswith("[Could not read"):
+            return fallback
+
+        return text or f"[Unable to extract text from PDF: {name}]"
+
+    if ext == ".docx":
+        return extract_docx(data) or extract_text_from_zip_bytes(data, name)
+
+    if ext == ".xlsx":
+        return extract_xlsx(data) or extract_text_from_zip_bytes(data, name)
+
+    if ext == ".pptx":
+        return extract_pptx(data) or extract_text_from_zip_bytes(data, name)
+
+    if ext in ZIP_LIKE_EXTENSIONS:
+        return extract_text_from_zip_bytes(data, name)
+
+    if ext in LIBREOFFICE_EXTENSIONS:
+        converted = convert_with_libreoffice(data, name)
+
+        if converted:
+            return converted
+
+        return (
+            f"[Legacy format {ext} could not be converted. Install LibreOffice for support: "
+            "`sudo apt install libreoffice`.]"
+        )
 
     try:
-        return content_bytes.decode("utf-8", errors="ignore")
+        decoded = data.decode("utf-8")
+
+        if decoded.isprintable() or "\n" in decoded:
+            return decoded
+
     except Exception:
-        return f"[Binary or unsupported format preview for {uploaded_file.name}]"
+        pass
 
-# ---------------- SymPy Parser ----------------
-_NAMES = ["diff", "integrate", "limit", "solve", "simplify", "expand", "factor", "cancel", "apart",
-          "trigsimp", "series", "summation", "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh",
-          "tanh", "exp", "log", "sqrt", "Abs", "factorial", "binomial", "gcd", "lcm", "Rational", "oo",
-          "pi", "E", "Integer", "Float", "Symbol", "Function"]
-SAFE = {n: getattr(sp, n) for n in _NAMES if hasattr(sp, n)}
-SAFE.update({s: sp.Symbol(s) for s in "xyztnabc"})
-_TRANSFORMS = standard_transformations + (convert_xor,)
-_ALLOWED = re.compile(r"[A-Za-z0-9_+\-*/^().,\s]*")
+    return f"[Binary or unsupported file: {name} ({ext})]"
 
-def run_sympy(expr: str):
-    if len(expr) > 200 or "__" in expr or not _ALLOWED.fullmatch(expr):
-        return None, "Use only numbers, letters, + - * / ^ ( ) , and SymPy functions."
+
+def make_file_context(files) -> tuple[str, list[str]]:
+    contexts = []
+    chips = []
+
+    for uploaded in files[:8]:
+        raw_text = extract_text_from_upload(uploaded)
+        text = raw_text[:MAX_FILE_CHARS]
+        contexts.append(
+            f"### Uploaded file: {uploaded.name}\n"
+            f"Type: {uploaded.type or 'unknown'}\n\n"
+            f"{text}"
+        )
+        chips.append(uploaded.name)
+
+    joined = "\n\n".join(contexts)
+
+    if len(joined) > MAX_HISTORY_CHARS:
+        joined = joined[:MAX_HISTORY_CHARS] + "\n\n[File context truncated.]"
+
+    return joined, chips
+
+# ----------------------------- MATH -----------------------------
+
+SYMPY_NAMES = [
+    "diff", "integrate", "limit", "solve", "simplify", "expand", "factor",
+    "cancel", "apart", "trigsimp", "series", "summation", "sin", "cos", "tan",
+    "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "sqrt",
+    "Abs", "factorial", "binomial", "gcd", "lcm", "Rational", "oo", "pi",
+    "E", "Integer", "Float", "Symbol", "Function",
+]
+
+SAFE_SYMPY = {n: getattr(sp, n) for n in SYMPY_NAMES if hasattr(sp, n)}
+SAFE_SYMPY.update({letter: sp.Symbol(letter) for letter in "xyztnabc"})
+
+SYMPY_TRANSFORMS = standard_transformations + (convert_xor,)
+ALLOWED_MATH = re.compile(r"[A-Za-z0-9_+\-*/^().,\s]*")
+
+
+def run_sympy(expression: str):
+    expression = expression.strip()
+
+    if not expression:
+        return None, "Enter an expression first."
+
+    if len(expression) > 250 or "__" in expression:
+        return None, "Expression is too long or contains forbidden characters."
+
+    if not ALLOWED_MATH.fullmatch(expression):
+        return None, "Use only numbers, letters, + - * / ^ ( ) , and supported SymPy functions."
+
     try:
-        return sp.simplify(parse_expr(expr, local_dict=SAFE, global_dict={"__builtins__": {}},
-                                      transformations=_TRANSFORMS)), None
-    except Exception as e:
-        return None, f"{type(e).__name__}: {str(e)[:120]}"
+        result = sp.simplify(
+            parse_expr(
+                expression,
+                local_dict=SAFE_SYMPY,
+                global_dict={"__builtins__": {}},
+                transformations=SYMPY_TRANSFORMS,
+            )
+        )
+        return result, None
 
-# ---------------- Generation Streamer ----------------
-class _Stopped(Exception):
+    except Exception as e:
+        return None, f"{type(e).__name__}: {str(e)[:180]}"
+
+# ----------------------------- GENERATION -----------------------------
+
+class GenerationStopped(Exception):
     pass
 
+
 class StoppableStreamer(TextIteratorStreamer):
-    def __init__(self, tok, ev, **kw):
-        super().__init__(tok, **kw)
-        self._ev = ev
+    def __init__(self, tok, event, **kwargs):
+        super().__init__(tok, **kwargs)
+        self.stop_event = event
 
     def put(self, value):
-        if self._ev.is_set():
-            raise _Stopped()
+        if self.stop_event.is_set():
+            raise GenerationStopped()
+
         super().put(value)
 
-def stream_reply(messages, adapter, temperature, max_new_tokens, err, raw_prompt=None):
-    text = raw_prompt if raw_prompt is not None else tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-    inputs = tokenizer(text, return_tensors="pt").to("cuda")
-    streamer = StoppableStreamer(tokenizer, stop_event, skip_prompt=True, skip_special_tokens=True, timeout=180)
 
-    def work():
-        with gen_lock:
+def stream_reply(messages, adapter, temperature, max_new_tokens, error_box):
+    prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=False,
+    )
+
+    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+    streamer = StoppableStreamer(
+        tokenizer,
+        stop_event,
+        skip_prompt=True,
+        skip_special_tokens=True,
+        timeout=180,
+    )
+
+    def worker():
+        with generation_lock:
             stop_event.clear()
+
             try:
                 model.set_adapter(adapter)
+
                 with torch.no_grad():
                     model.generate(
-                        **inputs, streamer=streamer, max_new_tokens=max_new_tokens,
-                        temperature=temperature, top_p=0.8, do_sample=True, repetition_penalty=1.05,
+                        **inputs,
+                        streamer=streamer,
+                        max_new_tokens=max_new_tokens,
+                        temperature=temperature,
+                        top_p=0.8,
+                        do_sample=True,
+                        repetition_penalty=1.05,
                         pad_token_id=tokenizer.pad_token_id,
                         eos_token_id=tokenizer.convert_tokens_to_ids("<|im_end|>"),
                     )
-            except _Stopped:
-                streamer.on_finalized_text("", stream_end=True)
-            except Exception as e:
-                err["e"] = e
+
+            except GenerationStopped:
                 streamer.on_finalized_text("", stream_end=True)
 
-    threading.Thread(target=work, daemon=True).start()
+            except Exception as e:
+                error_box["error"] = e
+                streamer.on_finalized_text("", stream_end=True)
+
+    threading.Thread(target=worker, daemon=True).start()
+
     for piece in streamer:
         yield piece
 
-# ---------------- Text Helpers ----------------
-def safe_markdown(t: str) -> str:
-    if t.count("```") % 2:
-        t += "\n```"
-    if t.count("$$") \% 2: t += "$$"
-    return t
+# ----------------------------- HELPERS -----------------------------
+
+def safe_markdown(text: str) -> str:
+    if text.count("```") % 2:
+        text += "\n```"
+
+    if text.count("$$") % 2:
+        text += "$$"
+
+    return text
+
 
 def render_stream(slot, text: str, final: bool = False):
     if final:
-        slot.markdown(text)
+        slot.markdown(safe_markdown(text))
         return
-    held = text[: max(text.rfind(" "), text.rfind("\n")) + 1] or text
+
+    cut = max(text.rfind(" "), text.rfind("\n")) + 1
+    held = text[:cut] if cut else text
+
     slot.markdown(safe_markdown(held) + " ▌")
 
-def normalize_math(s: str) -> str:
-    for a, b in {"**": "^", "²": "^2", "³": "^3", "⁴": "^4", "⁵": "^5",
-                 "\\cdot": "", "\\left": "", "\\right": ""}.items():
-        s = s.replace(a, b)
-    return re.sub(r"[\s*${}\\]", "", s)
 
-def popover(label):
-    return st.popover(label) if hasattr(st, "popover") else st.expander(label)
+def trim_history(messages, limit=MAX_HISTORY_CHARS):
+    total = 0
+    kept = []
 
-def columns(spec, **kw):
+    for msg in reversed(messages):
+        cost = len(msg.get("content", ""))
+
+        if total + cost > limit and kept:
+            break
+
+        kept.append(msg)
+        total += cost
+
+    return list(reversed(kept))
+
+
+def new_chat():
+    st.session_state.messages = []
+    st.session_state.current_id = None
+    st.session_state.title = None
+    st.session_state.uploaded_files = []
+    st.session_state.file_context = ""
+
+
+def save_chat():
+    if not st.session_state.messages:
+        return
+
+    if not st.session_state.current_id:
+        st.session_state.current_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    first_user = next(
+        (m["content"] for m in st.session_state.messages if m["role"] == "user"),
+        "Chat",
+    )
+
+    title = re.sub(r"\s+", " ", first_user)[:60] or "Chat"
+
+    record = {
+        "id": st.session_state.current_id,
+        "title": title,
+        "mode": st.session_state.mode,
+        "updated": datetime.now().isoformat(timespec="seconds"),
+        "messages": st.session_state.messages,
+    }
+
+    path = CHAT_DIR / f"{st.session_state.current_id}.json"
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_chat(path: Path):
     try:
-        return st.columns(spec, vertical_alignment="center", **kw)
-    except TypeError:
-        return st.columns(spec, **kw)
+        record = json.loads(path.read_text(encoding="utf-8"))
+        st.session_state.messages = record.get("messages", [])
+        st.session_state.current_id = record.get("id")
+        st.session_state.title = record.get("title")
+        st.session_state.mode = record.get("mode", "General")
+        st.session_state.uploaded_files = []
+        st.session_state.file_context = ""
+    except Exception as e:
+        st.error(f"Could not open chat: {e}")
 
-def count_tokens(t: str) -> int:
-    return len(tokenizer(t, add_special_tokens=False)["input_ids"])
+# ----------------------------- SESSION -----------------------------
 
-# ---------------- State Initialization ----------------
 ss = st.session_state
 ss.setdefault("messages", [])
 ss.setdefault("current_id", None)
 ss.setdefault("title", None)
 ss.setdefault("mode", "General")
+ss.setdefault("uploaded_files", [])
+ss.setdefault("file_context", "")
 ss.setdefault("expr", "diff(x**3 + 5*x, x)")
 
-REASONS = ["Incorrect", "Too short", "Too long", "Confusing", "Wrong format", "Other"]
-FOLLOWUPS = {
-    "General": ["Explain it more simply", "Give me an example", "Summarize in 3 bullet points"],
-    "English": ["Give me 3 practice sentences", "Explain it more simply", "Show another example"],
-    "Math": ["Give me a similar problem to try", "Explain it more simply", "Quiz me on this"],
-}
-FILE_DEFAULTS = {"English": "Proofread this attached document/file and explain each correction in detail:",
-                 "Math": "Analyze and solve the problems in this attached file step by step:",
-                 "General": "Summarize and extract key insights from this attached file:"}
-MAX_FILE_CHARS = 12000
+# ----------------------------- SIDEBAR -----------------------------
 
-def train_prompt(user: str) -> str:
-    return f"<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-
-# ---------------- Chat History Persistence ----------------
-def make_title(text: str) -> str:
-    t = re.sub(r"\s+", " ", text).strip()
-    t = re.sub(r"^Correct the grammar and explain in detail:\s*", "Grammar: ", t)
-    t = re.sub(r"^Explain step by step the derivative of:\s*", "Derivative: ", t)
-    return t[:42] + ("…" if len(t) > 42 else "")
-
-def save_chat():
-    if not ss["messages"]:
-        return
-    if not ss["current_id"]:
-        ss["current_id"] = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    if not ss["title"]:
-        first = next((m["content"] for m in ss["messages"] if m["role"] == "user"), "New chat")
-        ss["title"] = make_title(first)
-    data = {"id": ss["current_id"], "title": ss["title"], "updated": time.time(),
-            "starred": ss.get("starred", False), "messages": ss["messages"]}
-    path = CHAT_DIR / f"{ss['current_id']}.json"
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
-
-def list_chats():
-    chats = []
-    for p in CHAT_DIR.glob("*.json"):
-        try:
-            d = json.loads(p.read_text(encoding="utf-8"))
-            chats.append({"id": d["id"], "title": d.get("title", "Chat"), "updated": d.get("updated", 0),
-                          "starred": d.get("starred", False),
-                          "blob": " ".join(m["content"] for m in d["messages"]).lower(),
-                          "mode": next((m.get("mode") for m in reversed(d["messages"]) if m.get("mode")), "General")})
-        except Exception:
-            continue
-    return sorted(chats, key=lambda c: c["updated"], reverse=True)
-
-def new_chat():
-    ss["current_id"], ss["title"], ss["messages"], ss["starred"] = None, None, [], False
-
-def open_chat(cid):
-    try:
-        d = json.loads((CHAT_DIR / f"{cid}.json").read_text(encoding="utf-8"))
-    except Exception:
-        return
-    ss["current_id"], ss["title"], ss["messages"] = d["id"], d.get("title"), d["messages"]
-    ss["starred"] = d.get("starred", False)
-    last = next((m.get("mode") for m in reversed(d["messages"]) if m.get("mode")), None)
-    if last in MODES:
-        ss["mode"] = last
-
-def delete_chat(cid):
-    (CHAT_DIR / f"{cid}.json").unlink(missing_ok=True)
-    if ss["current_id"] == cid:
-        new_chat()
-
-def delete_all():
-    for p in CHAT_DIR.glob("*.json"):
-        p.unlink(missing_ok=True)
-    new_chat()
-
-# ---------------- Action Handlers ----------------
-def stop_generation():
-    stop_event.set()
-
-def regenerate():
-    msgs = ss["messages"]
-    if len(msgs) >= 2 and msgs[-1]["role"] == "assistant":
-        idx = len(msgs) - 1
-        last, user = msgs.pop(), msgs.pop()
-        for k in (f"fb_{ss['current_id']}_{idx}", f"why_{ss['current_id']}_{idx}"):
-            ss.pop(k, None)
-        if last.get("mode") in MODES:
-            ss["mode"] = last["mode"]
-        ss["queued"] = user["content"]
-        ss["no_hint"] = False
-
-def queue_example(ex):
-    if isinstance(ex, tuple):
-        ss["queued"], ss["expr"] = ex[0], ex[1]
-    else:
-        ss["queued"] = ex
-
-def queue_followup(text):
-    ss["queued"], ss["force_ctx"], ss["no_hint"] = text, True, True
-
-def log_feedback(i):
-    m = ss["messages"][i]
-    prev = ss["messages"][i - 1]["content"] if i > 0 else ""
-    rec = {"ts": time.time(), "chat": ss["current_id"], "mode": m.get("mode"), "prompt": prev,
-           "reply": m["content"], "rating": m.get("rating"), "reason": m.get("reason")}
-    with open(CHAT_DIR / "feedback.jsonl", "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-def rate(i, key):
-    m, v = ss["messages"][i], ss.get(key)
-    if v is None:
-        m.pop("rating", None), m.pop("reason", None)
-    else:
-        m["rating"] = v
-        if v == 1:
-            m.pop("reason", None)
-    save_chat()
-    log_feedback(i)
-
-def give_reason(i, key):
-    ss["messages"][i]["reason"] = ss.get(key)
-    save_chat()
-    log_feedback(i)
-
-def toggle_pin(i):
-    m = ss["messages"][i]
-    m["pinned"] = not m.get("pinned", False)
-    save_chat()
-
-def toggle_star(cid):
-    path = CHAT_DIR / f"{cid}.json"
-    try:
-        d = json.loads(path.read_text(encoding="utf-8"))
-        d["starred"] = not d.get("starred", False)
-        path.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
-        if ss["current_id"] == cid:
-            ss["starred"] = d["starred"]
-    except Exception:
-        pass
-
-def fork_edit(i, key):
-    text = (ss.get(key) or "").strip()
-    if not text:
-        return
-    base = [dict(m) for m in ss["messages"][:i]]
-    old_title = ss.get("title")
-    ss["messages"], ss["current_id"], ss["starred"] = base, None, False
-    ss["title"] = f"{old_title} (edited)" if (base and old_title) else None
-    ss["queued"], ss["no_hint"] = text, False
-
-def continue_generation():
-    ss["cont"] = True
-
-# ---------------- Context Window ----------------
-def build_context(messages, budget, max_turns=None):
-    turns = [(messages[i], messages[i + 1]) for i in range(len(messages) - 1)
-             if messages[i]["role"] == "user" and messages[i + 1]["role"] == "assistant"
-             and not messages[i + 1].get("error")]
-    total = len(turns)
-    if max_turns:
-        turns = turns[-max_turns:]
-    cost = lambda t: count_tokens(t[0]["content"] + " " + t[1]["content"]) + 12
-    chosen, used = set(), 0
-    for idx, t in enumerate(turns):
-        if t[1].get("pinned") and used + cost(t) <= budget:
-            chosen.add(idx); used += cost(t)
-    for idx in range(len(turns) - 1, -1, -1):
-        if idx in chosen:
-            continue
-        c = cost(turns[idx])
-        if used + c > budget:
-            break
-        chosen.add(idx); used += c
-    history = []
-    for idx in sorted(chosen):
-        history += [{"role": "user", "content": turns[idx][0]["content"]},
-                    {"role": "assistant", "content": turns[idx][1]["content"]}]
-    pinned = sum(1 for idx in chosen if turns[idx][1].get("pinned"))
-    return history, {"total": total, "included": len(chosen), "dropped": total - len(chosen),
-                     "pinned": pinned, "used": used, "budget": budget}
-
-def day_label(ts):
-    d = datetime.fromtimestamp(ts).date()
-    if d == date.today():
-        return "Today"
-    if d == date.today() - timedelta(days=1):
-        return "Yesterday"
-    return "Earlier"
-
-def read_chat_input(val):
-    if val is None:
-        return None, None
-    if isinstance(val, str):
-        return val, None
-    get = (lambda k: val.get(k)) if hasattr(val, "get") else (lambda k: getattr(val, k, None))
-    files = get("files") or []
-    return (get("text") or "").strip(), (files[0] if files else None)
-
-# Handle interrupted generation safely
-if ss.get("gen"):
-    stop_event.set()
-    g = ss.pop("gen")
-    if g.get("text", "").strip():
-        n = count_tokens(g["text"])
-        if g.get("cont") and ss["messages"] and ss["messages"][-1]["role"] == "assistant":
-            last = ss["messages"][-1]
-            last["content"] += g["text"]
-            last.update(stopped=True, truncated=False, meta=f"⏹ Stopped · +{n} tokens")
-        else:
-            ss["messages"].append({"role": "assistant", "content": g["text"], "mode": g["mode"], "stopped": True,
-                                   "meta": f"⏹ Stopped · {n} tokens", "sympy": g.get("sympy"),
-                                   "sent": g.get("sent"), "ctx_turns": g.get("ctx_turns")})
-        save_chat()
-    ss["announce"] = "Generation stopped."
-ss["gen"] = None
-
-# ---------------- Sidebar Layout ----------------
 with st.sidebar:
-    st.markdown(f'<div class="side-title">{LOGO_IMG} Tutor Studio</div>', unsafe_allow_html=True)
-    st.button("✏️  New chat", on_click=new_chat, use_container_width=True)
+    st.subheader("Workspace")
 
-    chats = list_chats()
-    query = ""
-    if len(chats) > 6:
-        query = st.text_input("Search chats", placeholder="🔎  Search titles...", label_visibility="collapsed").strip().lower()
-    shown = [c for c in chats if query in c["title"].lower() or query in c["blob"]]
-    shown = sorted(shown, key=lambda c: (not c["starred"], -c["updated"]))[:40]
+    mode = st.radio(
+        "Assistant mode",
+        list(MODES.keys()),
+        format_func=lambda m: f"{MODES[m]['icon']} {m}",
+        key="mode",
+    )
 
-    if not chats:
-        st.caption("Your conversations will appear here.")
-    elif not shown:
-        st.caption("No chats match your search.")
-    
-    last_label = None
-    for c in shown:
-        label = "⭐ Starred" if c["starred"] else day_label(c["updated"])
-        if label != last_label:
-            st.markdown(f'<div class="hist-label">{label}</div>', unsafe_allow_html=True)
-            last_label = label
-        row = columns([0.66, 0.17, 0.17], gap="small")
-        row[0].button(f"{MODES.get(c['mode'], MODES['General'])['icon']}  {c['title']}", key=f"open_{c['id']}",
-                      on_click=open_chat, args=(c["id"],), use_container_width=True,
-                      type="primary" if c["id"] == ss["current_id"] else "secondary")
-        row[1].button("★" if c["starred"] else "☆", key=f"star_{c['id']}", on_click=toggle_star, args=(c["id"],),
-                      help="Star this chat", use_container_width=True)
-        row[2].button("✕", key=f"del_{c['id']}", on_click=delete_chat, args=(c["id"],),
-                      help="Delete chat", use_container_width=True)
+    st.caption(MODES[mode]["blurb"])
 
     st.divider()
-    with st.expander("⚙️  Settings & Formats"):
-        max_tokens = st.slider("Max response length (tokens)", 200, 1500, 800, step=100)
-        temperature = st.slider("Creativity", 0.1, 1.0, 0.7, step=0.1)
-        remember = st.toggle("Use earlier messages as context", value=False)
-        ctx_budget = st.slider("Context budget (tokens)", 1000, 6000, 3000, step=500)
-        st.markdown("**Supported File Formats (30):**\n`.pdf, .docx, .xlsx, .pptx, .txt, .csv, .html, .doc, .xls, .ppt, .rtf, .odt, .ods, .odp, .md, .json, .xml, .tex, .epub, .pages, .numbers, .key, .zip, .ps, .indd, .pub, .xps, .mht, .fb2, .wpd`")
-        if ss["messages"]:
-            md = "\n\n".join(f"**{'You' if m['role'] == 'user' else 'Tutor'}:**\n{m['content']}" for m in ss["messages"])
-            st.download_button("⬇️  Export chat (.md)", md, file_name="tutor_chat.md", use_container_width=True)
-        if chats:
-            sure = st.checkbox("I want to delete all chats")
-            st.button("🗑️  Delete all chats", on_click=delete_all, disabled=not sure, use_container_width=True)
-    st.caption(f"🟢 Model ready · {torch.cuda.get_device_name(0)}")
+    st.subheader("Generation")
 
-# ---------------- Main Interface ----------------
-st.markdown(
-    f'<div class="hero"><h1>{LOGO_IMG}English + Math Tutor Studio</h1>'
-    '<p>Advanced multi-adapter AI assistant with support for 30 professional document & code file formats.</p></div>',
-    unsafe_allow_html=True)
-st.markdown(f'<div class="sr-only" role="status" aria-live="polite">{ss.pop("announce", "")}</div>',
-            unsafe_allow_html=True)
+    temperature = st.slider("Creativity", 0.0, 1.0, 0.35, 0.05)
+    max_new_tokens = st.slider("Maximum response length", 256, 4096, 1600, 128)
 
-fmt = lambda m: f"{MODES[m]['icon']}  {m}"
-if hasattr(st, "segmented_control"):
-    st.segmented_control("Mode", list(MODES), format_func=fmt, key="mode", label_visibility="collapsed")
-else:
-    st.radio("Mode", list(MODES), format_func=fmt, key="mode", horizontal=True, label_visibility="collapsed")
+    st.divider()
+    st.subheader("Chats")
 
-mode = ss["mode"] if ss.get("mode") in MODES else "General"
-cfg = MODES[mode]
-st.caption(f"{cfg['icon']} **{mode}** · {cfg['blurb']}")
+    if st.button("➕ New chat", use_container_width=True):
+        new_chat()
+        st.rerun()
 
-expr = ""
-if mode == "Math":
-    with st.expander("🧮  SymPy check (optional)", expanded=not ss["messages"]):
-        expr = st.text_input("Expression", key="expr")
-        if expr.strip():
-            res, perr = run_sympy(expr)
-            if perr:
-                st.warning(perr)
-            else:
-                st.latex(sp.latex(res))
-                st.caption("SymPy verification check active.")
+    chat_files = sorted(CHAT_DIR.glob("*.json"), reverse=True)
 
-SUPPORTED_FILE_TYPES = [
-    "pdf", "docx", "xlsx", "pptx", "txt", "csv", "html", "htm", "doc", "xls",
-    "ppt", "rtf", "odt", "ods", "odp", "md", "json", "xml", "tex", "epub",
-    "pages", "numbers", "key", "zip", "ps", "indd", "pub", "xps", "mht", "mhtml", "fb2", "wpd", "py", "ipynb"
-]
+    if chat_files:
+        selected = st.selectbox(
+            "Open saved chat",
+            options=[""] + [p.stem for p in chat_files[:30]],
+            format_func=lambda x: "Select a chat..." if not x else x,
+        )
 
-try:
-    raw = st.chat_input(cfg["placeholder"], accept_file=True, file_type=SUPPORTED_FILE_TYPES)
-except TypeError:
-    raw = st.chat_input(cfg["placeholder"])
+        if selected and selected != st.session_state.current_id:
+            load_chat(CHAT_DIR / f"{selected}.json")
+            st.rerun()
+    else:
+        st.caption("No saved chats yet.")
 
-prompt, attachment = read_chat_input(raw)
-if prompt is None and attachment is None:
-    prompt = ss.pop("queued", None)
+    st.divider()
+    st.caption(f"Base model: `{BASE_MODEL}`")
+    st.caption(f"GPU: `{torch.cuda.get_device_name(0)}`")
 
-cont_run = bool(ss.pop("cont", False)) and not prompt and attachment is None and len(ss["messages"]) >= 2 \
-    and ss["messages"][-1]["role"] == "assistant"
-busy = bool(prompt) or attachment is not None or cont_run
+# ----------------------------- MAIN UI -----------------------------
 
-if not ss["messages"] and not busy:
-    st.markdown("##### Try one of these prompts or drop any document/file below:")
-    for i, ex in enumerate(cfg["examples"]):
-        label = ex[0] if isinstance(ex, tuple) else ex
-        st.button(label, key=f"ex_{mode}_{i}", on_click=queue_example, args=(ex,), use_container_width=True)
-    st.caption("📎 Supports PDF, Word, Excel, PowerPoint, EPUB, ZIP, Code, Markdown, and 20+ other professional formats.")
+cols = st.columns(3)
 
-def stream_into(slot, prefix, gen_msgs, adapter, raw_prompt=None):
-    err, buf, t0, first, last = {}, "", time.time(), None, 0.0
-    for piece in stream_reply(gen_msgs, adapter, temperature, max_tokens, err, raw_prompt):
-        if first is None:
-            first = time.time() - t0
-        buf += piece
-        ss["gen"]["text"] = buf
-        if time.time() - last > 0.05:
-            render_stream(slot, prefix + buf)
-            last = time.time()
-    was_stopped = stop_event.is_set()
-    render_stream(slot, prefix + buf, final=True)
-    return buf, err, first, was_stopped, max(time.time() - t0, 1e-3)
+for i, (name, cfg) in enumerate(MODES.items()):
+    with cols[i]:
+        selected = name == mode
+        border = "2px solid #6366f1" if selected else "1px solid rgba(148,163,184,.25)"
+        st.markdown(
+            f"""
+            <div class="mode-card" style="border:{border}">
+              <div class="mode-title">{cfg['icon']} {name}</div>
+              <div class="mode-blurb">{cfg['blurb']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-def render_actions(i, m, is_last):
-    cid = ss["current_id"]
-    if m.get("error"):
-        if is_last:
-            st.button("🔄  Retry", key=f"retry_{cid}_{i}", on_click=regenerate)
-        return
-    cols = columns([1.0, 1.1, 1.5, 1.2])
-    if hasattr(st, "feedback"):
-        fk = f"fb_{cid}_{i}"
-        if fk not in ss and m.get("rating") is not None:
-            ss[fk] = m["rating"]
-        with cols[0]:
-            st.feedback("thumbs", key=fk, on_change=rate, args=(i, fk))
-    pinned = m.get("pinned", False)
-    cols[1].button("📌 Pinned" if pinned else "📌 Pin", key=f"pin_{cid}_{i}", on_click=toggle_pin, args=(i,),
-                   type="primary" if pinned else "secondary")
-    if is_last:
-        cols[2].button("🔄 Retry" if m.get("stopped") else "🔄 Regenerate", key=f"regen_{cid}_{i}", on_click=regenerate)
-    with cols[3]:
-        with popover("📋 Copy"):
-            try:
-                st.code(m["content"], language=None, wrap_lines=True)
-            except TypeError:
-                st.code(m["content"], language=None)
-    if m.get("rating") == 0:
-        wk = f"why_{cid}_{i}"
-        if wk not in ss and m.get("reason"):
-            ss[wk] = m["reason"]
-        chooser = getattr(st, "pills", None)
-        if chooser:
-            chooser("What went wrong?", REASONS, key=wk, on_change=give_reason, args=(i, wk))
+st.divider()
+
+left, right = st.columns([2.35, 1])
+
+with right:
+    st.subheader("📎 Attach files")
+
+    uploaded_files = st.file_uploader(
+        "Upload documents, spreadsheets, presentations, code, archives, or text files",
+        type=[
+            "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "txt", "csv",
+            "tsv", "md", "markdown", "html", "htm", "json", "xml", "yaml", "yml",
+            "tex", "rtf", "odt", "ods", "odp", "epub", "fb2", "zip", "py", "ipynb",
+            "js", "ts", "java", "c", "cpp", "h", "cs", "go", "rs", "rb", "php",
+            "sh", "sql", "css", "log", "pages", "numbers", "key", "ps", "wpd",
+            "pub", "xps", "mht", "mhtml",
+        ],
+        accept_multiple_files=True,
+    )
+
+    if uploaded_files:
+        st.session_state.uploaded_files = uploaded_files
+        file_context, chips = make_file_context(uploaded_files)
+        st.session_state.file_context = file_context
+
+        st.markdown(
+            "".join(f'<span class="file-chip">{c}</span>' for c in chips),
+            unsafe_allow_html=True,
+        )
+    else:
+        st.session_state.uploaded_files = []
+        st.session_state.file_context = ""
+
+    st.divider()
+    st.subheader("🧮 Math checker")
+
+    expression = st.text_area(
+        "SymPy expression",
+        value=ss.expr,
+        height=90,
+        help="Examples: diff(x**3 + 5*x, x), integrate(x**2, x), solve(x**2 - 4, x)",
+    )
+
+    ss.expr = expression
+
+    if st.button("Check with SymPy", use_container_width=True):
+        result, error = run_sympy(expression)
+
+        if error:
+            st.error(error)
         else:
-            st.selectbox("What went wrong?", REASONS, index=None, key=wk, on_change=give_reason, args=(i, wk))
-    if is_last and m.get("truncated"):
-        st.button("▶  Continue", key=f"cont_{cid}_{i}", on_click=continue_generation)
-    if is_last and not m.get("stopped"):
-        chips = st.columns(3)
-        for c, text in zip(chips, FOLLOWUPS[mode]):
-            c.button(text, key=f"fu_{cid}_{i}_{text[:10]}", on_click=queue_followup, args=(text,), use_container_width=True)
+            st.success("SymPy result")
+            st.code(str(result), language="text")
 
-msgs = ss["messages"]
-for i, m in enumerate(msgs):
-    if cont_run and i == len(msgs) - 1:
-        continue
-    with st.chat_message(m["role"], avatar="🧑‍🎓" if m["role"] == "user" else AVATAR):
-        if m["role"] == "assistant":
-            st.markdown(f'<span class="pill">{m["mode"]}</span>', unsafe_allow_html=True)
-        st.markdown(m["content"])
-        if m.get("meta"):
-            st.caption(m["meta"])
-        if m.get("check") == "match":
-            st.caption(f"✅ Final result matches SymPy: `{m['sympy']}`")
-        elif m.get("check") == "mismatch":
-            st.caption(f"⚠️ SymPy computed `{m['sympy']}` but it was not found verbatim.")
-        if m["role"] == "user" and not busy:
-            with popover("✏️ Edit"):
-                ek = f"edit_{ss['current_id']}_{i}"
-                st.text_area("Edit message:", value=m["content"], key=ek, height=110)
-                st.button("Send as new branch", key=f"fork_{ss['current_id']}_{i}", on_click=fork_edit, args=(i, ek))
-        if m["role"] == "assistant" and not busy:
-            render_actions(i, m, is_last=(i == len(msgs) - 1))
+with left:
+    if not ss.messages:
+        st.markdown("### Start a conversation")
+        st.caption("Choose a mode, attach files if needed, then ask a question.")
 
-if remember and msgs and not busy:
-    _, info = build_context(msgs, ctx_budget)
-    line = f"📚 Context: {info['included']} of {info['total']} turns · {info['used']:,} / {info['budget']:,} tokens"
-    st.progress(min(info["used"] / info["budget"], 1.0), text=line)
+        for example in MODES[mode]["examples"]:
+            if st.button(example, use_container_width=True):
+                ss.pending_prompt = example
+                st.rerun()
 
-def fmt_meta(n_tok, secs, ttft):
-    ft = f" · first token {ttft:.1f}s" if ttft is not None else ""
-    return f"{n_tok} tokens · {n_tok / secs:.1f} tok/s{ft} · {secs:.0f}s"
+    for message in ss.messages:
+        role = message["role"]
+        avatar = "🧑‍💻" if role == "user" else "✨"
 
-def sympy_check(sympy_str, text):
-    return "match" if normalize_math(sympy_str) in normalize_math(text) else "mismatch"
+        with st.chat_message(role, avatar=avatar):
+            if message.get("files"):
+                st.markdown(
+                    "".join(
+                        f'<span class="file-chip">{f}</span>'
+                        for f in message["files"]
+                    ),
+                    unsafe_allow_html=True,
+                )
 
-SKELETON = '<div class="skeleton" role="status" aria-label="Thinking"></div>'
+            st.markdown(message["content"])
 
-if busy:
-    force_ctx, no_hint = ss.pop("force_ctx", False), ss.pop("no_hint", False)
+    prompt = st.chat_input(
+        MODES[mode]["placeholder"],
+        key="main_chat_input",
+    )
 
-    if cont_run:
-        base, user_m = ss["messages"][-1], ss["messages"][-2]
-        with st.chat_message("assistant", avatar=AVATAR):
-            st.markdown(f'<span class="pill">{base["mode"]}</span>', unsafe_allow_html=True)
-            slot, stop_slot = st.empty(), st.empty()
-            slot.markdown(base["content"] + " ▌")
-            stop_slot.button("⏹  Stop generating", key="stop_btn", on_click=stop_generation)
-            ss["gen"] = {"mode": base["mode"], "text": "", "cont": True}
-            raw = ""
-            if base.get("ctx_turns") is not None:
-                hist, _ = build_context(ss["messages"][:-2], ctx_budget, max_turns=base["ctx_turns"] or None)
-                raw = "".join(f"<|im_start|>{h['role']}\n{h['content']}<|im_end|>\n" for h in hist)
-            raw += train_prompt(base.get("sent") or user_m["content"]) + base["content"]
-            buf, err, ttft, was_stopped, secs = stream_into(
-                slot, base["content"], [], MODES[base["mode"]]["adapter"], raw_prompt=raw)
-            stop_slot.empty()
-        ss["gen"] = None
-        n_new = count_tokens(buf) if buf else 0
-        base["content"] += buf
-        base["truncated"] = (not was_stopped) and (not err) and n_new >= max_tokens - 2
-        base["meta"] = (base.get("meta", "").split(" · continued")[0] + f" · continued +{n_new} tokens")
-        if was_stopped:
-            base["stopped"] = True
+    if not prompt and "pending_prompt" in ss:
+        prompt = ss.pending_prompt
+        del ss.pending_prompt
+
+    if prompt:
+        user_message = {"role": "user", "content": prompt}
+        file_names = [f.name for f in ss.uploaded_files]
+
+        if file_names:
+            user_message["files"] = file_names
+
+        ss.messages.append(user_message)
+
+        if ss.file_context:
+            user_content = (
+                f"{prompt}\n\n"
+                "Attached file content follows. Use it when relevant and cite section/page names if available.\n\n"
+                f"{ss.file_context}"
+            )
+        else:
+            user_content = prompt
+
+        history = trim_history(
+            [
+                {"role": m["role"], "content": m["content"]}
+                for m in ss.messages[:-1]
+            ]
+        )
+
+        messages = history + [{"role": "user", "content": user_content}]
+
+        with st.chat_message("user", avatar="🧑‍💻"):
+            if file_names:
+                st.markdown(
+                    "".join(
+                        f'<span class="file-chip">{f}</span>' for f in file_names
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown(prompt)
+
+        with st.chat_message("assistant", avatar="✨"):
+            slot = st.empty()
+            error_box = {}
+            response = ""
+
+            try:
+                for piece in stream_reply(
+                    messages,
+                    MODES[mode]["adapter"],
+                    temperature,
+                    max_new_tokens,
+                    error_box,
+                ):
+                    response += piece
+                    render_stream(slot, response)
+
+                render_stream(slot, response, final=True)
+
+            except Exception as e:
+                response += f"\n\n**Generation error:** `{e}`"
+                slot.markdown(safe_markdown(response))
+
+            if error_box.get("error"):
+                response += f"\n\n**Generation error:** `{error_box['error']}`"
+                slot.markdown(safe_markdown(response))
+
+            if not response.strip():
+                response = "I could not generate a response. Please try again."
+                slot.markdown(response)
+
+        ss.messages.append({"role": "assistant", "content": response})
         save_chat()
         st.rerun()
 
-    file_text = None
-    if attachment is not None:
-        try:
-            file_text = extract_text_from_file(attachment)
-        except Exception:
-            file_text = None
+# ----------------------------- QUICK ACTIONS -----------------------------
 
-    shown_prompt = (prompt or "").strip() or (FILE_DEFAULTS[mode] if file_text is not None else "")
-    user_msg = shown_prompt
-    if file_text is not None:
-        cut = len(file_text) > MAX_FILE_CHARS
-        user_msg += f"\n\n---\n{file_text[:MAX_FILE_CHARS]}\n---"
-        shown_prompt = f'<div class="file-badge">📎 Attached: {html.escape(attachment.name)}</div>\n\n' + shown_prompt
-        if cut:
-            shown_prompt += f"\n\n*(Showing first {MAX_FILE_CHARS:,} characters of parsed file)*"
+if ss.messages:
+    st.divider()
 
-    sympy_str = None
-    if mode == "Math" and expr.strip() and not no_hint:
-        res, perr = run_sympy(expr)
-        if perr is None:
-            sympy_str = str(res)
-            user_msg += f"\n[SymPy result: {res}]"
+    action_cols = st.columns(4)
 
-    history = []
-    if remember or force_ctx:
-        history, _ = build_context(ss["messages"], ctx_budget, max_turns=1 if (force_ctx and not remember) else None)
+    with action_cols[0]:
+        if st.button("🧹 Clear chat", use_container_width=True):
+            new_chat()
+            st.rerun()
 
-    ss["messages"].append({"role": "user", "content": shown_prompt})
-    save_chat()
-    with st.chat_message("user", avatar="🧑‍🎓"):
-        st.markdown(shown_prompt, unsafe_allow_html=True)
+    with action_cols[1]:
+        if st.button("💾 Save chat", use_container_width=True):
+            save_chat()
+            st.success("Chat saved.")
 
-    with st.chat_message("assistant", avatar=AVATAR):
-        st.markdown(f'<span class="pill">{mode}</span>', unsafe_allow_html=True)
-        slot, stop_slot = st.empty(), st.empty()
-        slot.markdown(SKELETON, unsafe_allow_html=True)
-        stop_slot.button("⏹  Stop generating", key="stop_btn", on_click=stop_generation)
-        ctx_turns = None if not (remember or force_ctx) else (1 if (force_ctx and not remember) else 0)
-        ss["gen"] = {"mode": mode, "text": "", "sympy": sympy_str, "sent": user_msg, "ctx_turns": ctx_turns}
-        buf, err, ttft, was_stopped, secs = stream_into(
-            slot, "", history + [{"role": "user", "content": user_msg}], cfg["adapter"])
-        stop_slot.empty()
+    with action_cols[2]:
+        if st.button("⬇️ Export Markdown", use_container_width=True):
+            md_lines = [f"# Tutor Studio Chat\n"]
 
-    ss["gen"] = None
-    n_tok = count_tokens(buf) if buf else 0
-    if err and not buf:
-        new_msg = {"role": "assistant", "content": f"⚠️ Generation failed: {err['e']}", "mode": mode, "error": True}
-    else:
-        new_msg = {"role": "assistant", "content": buf, "mode": mode, "meta": fmt_meta(n_tok, secs, ttft),
-                   "sent": user_msg, "ctx_turns": ctx_turns}
-        if was_stopped:
-            new_msg.update(stopped=True, meta=f"⏹ Stopped · {n_tok} tokens")
-        elif not err and n_tok >= max_tokens - 2:
-            new_msg["truncated"] = True
-        if sympy_str and not was_stopped:
-            new_msg["sympy"] = sympy_str
-            new_msg["check"] = sympy_check(sympy_str, buf)
-    ss["messages"].append(new_msg)
-    save_chat()
-    st.rerun()
+            for m in ss.messages:
+                label = "You" if m["role"] == "user" else "Assistant"
+                md_lines.append(f"## {label}\n\n{m['content']}\n")
 
-st.caption("AI-generated answers can contain mistakes. The ✅ badge represents an automatic SymPy comparison.")
+            st.download_button(
+                "Download chat",
+                data="\n".join(md_lines),
+                file_name="tutor-studio-chat.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
+
+    with action_cols[3]:
+        if st.button("⛔ Stop generation", use_container_width=True):
+            stop_event.set()
+            st.info("Stop requested. The current generation will halt at the next token.")
